@@ -5,6 +5,8 @@
 #include <sstream>
 #include <thread>
 #include <mutex>
+#include <codecvt>
+#include <locale>
 #include "Windows.h"
 #include "memoryapi.h"
 #include "tlhelp32.h"
@@ -325,17 +327,23 @@ void do_replaces(int id, shared_memory * shared_memory) {
     }
 }
 
-int main()
+int main(int argc, char * argv[])
 {
+    if (argc != 4) {
+        std::cout << "Expected usage ./sniffer.exe 'process_name' 'value_to_replace' 'value_to_set'" << std::endl;
+        return 0;
+    }
+
     setDebugPriv();
-    ProfileTimer timer("main");
+    ProfileTimer timer("sniffer");
 
     shared_memory mem;
 
-    const auto executable_to_consider = L"atom.exe";
-    const auto pids_to_consider = getPIDSForProcessName(L"firefox.exe");
-    mem.value_to_replace = "Liberal Hivemind";
-    mem.value_to_set = "Crying Clown";
+    const auto executable_to_consider = std::string((const char *)argv[1]);
+    const auto executable_to_consider_wstring = std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes(executable_to_consider);
+    const auto pids_to_consider = getPIDSForProcessName(executable_to_consider_wstring);
+    mem.value_to_replace = std::string((const char *) argv[2]);
+    mem.value_to_set = std::string((const char *) argv[3]);
 
     for (auto i = 0; i < pids_to_consider.size(); ++i) {
         const auto records_for_pid = getAllMemoryRegionsForPID(pids_to_consider[i]);
@@ -364,8 +372,8 @@ int main()
         "Found and replaced " << total_replacements << 
         " instances of \"" << mem.value_to_replace << 
         "\" to \"" << mem.value_to_set << 
-        "\" across " << pids_to_consider.size() << 
-        " processes for executable name \"" << executable_to_consider << "\"" << std::endl;
+        "\" across " << pids_to_consider.size() << " processes and " << mem.records.size() << " mem regions considering " << total_bytes_considered << " total bytes" <<
+        " for " << executable_to_consider << std::endl;
 
     return 0;
 }
