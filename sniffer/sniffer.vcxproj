@@ -140,6 +140,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Win32Api.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Params.h" />
+    <ClInclude Include="ProfileTimer.h" />
+    <ClInclude Include="Win32Api.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
