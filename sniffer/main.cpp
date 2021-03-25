@@ -20,7 +20,7 @@
 
 constexpr auto NUM_THREADS = 6;
 constexpr auto SNIFF_FILE_DELIM = "|";
-constexpr auto RPM_INITI_CHUNK_READ_SIZE = 8 * 1024;
+constexpr auto RPM_INIT_CHUNK_READ_SIZE = 8 * 1024;
 
 class ProfileTimer
 {
@@ -77,11 +77,19 @@ public:
     std::vector<char> bytes;
 };
 
+enum class SniffType {
+    unknown,
+    str,
+    i32,
+    f32
+};
 class SniffRecord {
 public:
+    SniffRecord() : pid(0), location(0), type(SniffType::unknown) {};
+    SniffRecord(uint64_t pid, uint64_t location, SniffType type) : pid(pid), location(location), type(type) {};
     uint64_t pid;
     uint64_t location;
-    std::string type;
+    SniffType type;
 };
 
 BOOL SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege)
@@ -227,11 +235,11 @@ void getMemoryRegionCopyForMemoryRegionRecord(const MemoryRegionRecord & record,
     );
 
     out_region.bytes.clear();
-    char buffer[RPM_INITI_CHUNK_READ_SIZE];
+    char buffer[RPM_INIT_CHUNK_READ_SIZE];
 
     SIZE_T num_bytes_read = 0;
 
-    auto chunk_factor = RPM_INITI_CHUNK_READ_SIZE;
+    auto chunk_factor = RPM_INIT_CHUNK_READ_SIZE;
     auto start = (SIZE_T)record.BaseAddress;
     auto end = start + record.RegionSize;
     auto i = 0;
@@ -245,13 +253,13 @@ void getMemoryRegionCopyForMemoryRegionRecord(const MemoryRegionRecord & record,
             &num_bytes_read
         );
 
-        if (rpm_result != 0 && chunk_factor < RPM_INITI_CHUNK_READ_SIZE) {
-            chunk_factor = min(chunk_factor * 4, RPM_INITI_CHUNK_READ_SIZE);
+        if (rpm_result != 0 && chunk_factor < RPM_INIT_CHUNK_READ_SIZE) {
+            chunk_factor = min(chunk_factor * 4, RPM_INIT_CHUNK_READ_SIZE);
         }
 
         if (rpm_result == 0 && chunk_factor > 1) {
             chunk_factor = min(chunk_factor / 4, 1);
-            ZeroMemory(buffer, RPM_INITI_CHUNK_READ_SIZE);
+            ZeroMemory(buffer, RPM_INIT_CHUNK_READ_SIZE);
             continue;
         }
         else if (rpm_result == 0) {
@@ -336,6 +344,29 @@ std::unordered_map<std::string, std::string> getArguments(int argc, char * argv[
     return result;
 }
 
+SniffType getSniffTypeForStr(std::string & type_str) {
+    if (type_str == "str") {
+        return SniffType::str;
+    }
+    else if (type_str == "i32") {
+        return SniffType::i32;
+    }
+    else if (type_str == "f32") {
+        return SniffType::f32;
+    }
+
+    return SniffType::unknown;
+}
+
+const char * getSniffTypeStrForType(SniffType type) {
+    switch (type) {
+    case SniffType::str: return "str";
+    case SniffType::i32: return "i32";
+    case SniffType::f32: return "f32";
+    default:
+    case SniffType::unknown: return "unknown";
+    }
+}
 
 SniffRecord getSniffRecordFromLine(std::string & str) {
     SniffRecord result;
@@ -351,8 +382,11 @@ SniffRecord getSniffRecordFromLine(std::string & str) {
             result.location = std::stoll(str.substr(last, next));
             break;
         case 2:
-            result.type = str.substr(last, next);
+        {
+            std::string type_str = str.substr(last, next);
+            result.type = getSniffTypeForStr(type_str);
             break;
+        }
         }
         last = next + 1;
     }
@@ -380,7 +414,7 @@ void writeSniffsToSniffFile(const std::string & exec_name, const std::vector<Sni
     std::ofstream sniff_file("." + exec_name + ".sniff");
     if (sniff_file.is_open()) {
         for (auto record : sniff_records) {
-            sniff_file << record->pid << SNIFF_FILE_DELIM << record->location << SNIFF_FILE_DELIM << record->type << std::endl;
+            sniff_file << record->pid << SNIFF_FILE_DELIM << record->location << SNIFF_FILE_DELIM << getSniffTypeStrForType(record->type) << std::endl;
         }
     }
 }
@@ -420,7 +454,7 @@ void do_replaces(int id, SharedMemory * sm) {
                     mem_region_copy.bytes[i + 2],
                     mem_region_copy.bytes[i + 3]
                 };
-                float val = *(float*)f32_bytes;
+                float val = *(float *)f32_bytes;
                 match = val == std::stof(sm->args.at("find"));
             }
 
@@ -453,9 +487,12 @@ void do_replaces(int id, SharedMemory * sm) {
 
 void do_sniffs(int id, SharedMemory * sm) {
     auto mem_region_copy = MemoryRegionCopy();
-    auto replace_type = sm->args.at("type");
+    auto replace_type_str = sm->args.at("type");
+    auto replace_type = getSniffTypeForStr(replace_type_str);
     auto is_resniff = sm->args.at("action") == "resniff";
-
+    auto i32_find = std::stoi(sm->args.at("find"));
+    auto f32_find = std::stoi(sm->args.at("find"));
+    std::string str_find = sm->args.at("find");
 
     for (auto i = sm->getNextJob(); i < sm->records.size(); i = sm->getNextJob()) {
         const auto & region_record = sm->records[i];
@@ -463,51 +500,33 @@ void do_sniffs(int id, SharedMemory * sm) {
         sm->thread_bytes[id] += mem_region_copy.bytes.size();
         for (uint64_t i = 0; i < mem_region_copy.bytes.size(); ++i) {
             bool match = false;
-            if (i + sm->args.at("find").size() < mem_region_copy.bytes.size() && replace_type == "str") {
-                std::string value_to_replace = sm->args.at("find");
-                for (uint64_t j = 0; j < value_to_replace.size(); ++j) {
-                    match = mem_region_copy.bytes[i + j] == value_to_replace.at(j);
+            if (i + sm->args.at("find").size() < mem_region_copy.bytes.size() && replace_type == SniffType::str) {
+                for (uint64_t j = 0; j < str_find.size(); ++j) {
+                    match = mem_region_copy.bytes[i + j] == str_find.at(j);
                     if (!match) break;
                 }
             }
-            else if (i + 3 < mem_region_copy.bytes.size() && replace_type == "i32") {
-                char i32_bytes[] = {
-                    mem_region_copy.bytes[i],
-                    mem_region_copy.bytes[i + 1],
-                    mem_region_copy.bytes[i + 2],
-                    mem_region_copy.bytes[i + 3]
-                };
-                int32_t val = *(int32_t *)i32_bytes;
-                match = val == std::stoi(sm->args.at("find"));
+            else if (i + 3 < mem_region_copy.bytes.size() && replace_type == SniffType::i32) {
+                int32_t val = *(int32_t *)&mem_region_copy.bytes[i];
+                match = val == i32_find;
             }
-            else if (i + 3 < mem_region_copy.bytes.size() && replace_type == "f32") {
-                char f32_bytes[] = {
-                    mem_region_copy.bytes[i],
-                    mem_region_copy.bytes[i + 1],
-                    mem_region_copy.bytes[i + 2],
-                    mem_region_copy.bytes[i + 3]
-                };
-                match = *((float *)f32_bytes) == std::stof(sm->args.at("find"));
+            else if (i + 3 < mem_region_copy.bytes.size() && replace_type == SniffType::f32) {
+                float val = *(float *)&mem_region_copy.bytes[i];
+                match = val == f32_find;
             }
 
             if (match) {
-                SniffRecord record;
-                record.pid = region_record.AssociatedPid;
-                record.location = ((uint64_t) region_record.BaseAddress) + i;
-                record.type = replace_type;
-                sm->thread_sniffs[id].push_back(record);
+                sm->thread_sniffs[id].emplace_back(region_record.AssociatedPid, (uint64_t)(region_record.BaseAddress) + i, replace_type);
             }
         }
     }
 }
 
+int32_t st = 12345678;
 
 int main(int argc, char * argv[])
 {
-    float var_to_sniff = 123456.23;
-
     auto args = getArguments(argc, argv);
-
     static std::unordered_map <std::string, std::vector<std::string> > required = {
         { "action", { "sniff", "replace", "resniff" } },
         { "type", { "i32", "f32", "str" } },
@@ -566,8 +585,7 @@ int main(int argc, char * argv[])
     size_t total_replacements = 0;
     size_t total_sniffs = 0;
     std::vector<SniffRecord *> sniff_records;
-    std::vector<float *> debug_ptrs;
-    float * ptr_to_find = &var_to_sniff;
+    std::vector<int32_t *> sniff_values;
 
     for (auto i = 0; i < NUM_THREADS; ++i) {
         total_bytes_considered += mem.thread_bytes[i];
@@ -575,7 +593,7 @@ int main(int argc, char * argv[])
         total_sniffs += mem.thread_sniffs[i].size();
         for (auto & record : mem.thread_sniffs[i]) {
             sniff_records.push_back(&record);
-            debug_ptrs.push_back((float *)record.location);
+            sniff_values.push_back((int32_t *)record.location);
         }
     }
 
