@@ -8,6 +8,7 @@
 #include <codecvt>
 #include <locale>
 #include <fstream>
+#include <set>
 #include <unordered_map>
 #include "Windows.h"
 #include "memoryapi.h"
@@ -168,6 +169,26 @@ void GetAllProcesses(std::vector<std::wstring> & out_vec) {
     CloseHandle(processesSnapshot);
 }
 
+void GetAllProcessesIDs(std::set<uint64_t> & out_set) {
+    PROCESSENTRY32 processInfo;
+    processInfo.dwSize = sizeof(processInfo);
+
+    HANDLE processesSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
+    if (processesSnapshot == INVALID_HANDLE_VALUE) {
+        return;
+    }
+
+    Process32First(processesSnapshot, &processInfo);
+    out_set.insert(processInfo.th32ProcessID);
+
+    while (Process32Next(processesSnapshot, &processInfo))
+    {
+        out_set.insert(processInfo.th32ProcessID);
+    }
+
+    CloseHandle(processesSnapshot);
+}
+
 void setDebugPriv() {
     HANDLE hProcess = GetCurrentProcess();
     HANDLE hToken;
@@ -182,6 +203,12 @@ void setDebugPriv() {
 std::vector<std::wstring> getOpenProcesses() {
     std::vector<std::wstring> output;
     GetAllProcesses(output);
+    return output;
+}
+
+std::set<uint64_t> getAllLivePIDs() {
+    std::set<uint64_t> output;
+    GetAllProcessesIDs(output);
     return output;
 }
 
@@ -430,15 +457,18 @@ SniffRecord getSniffRecordFromLine(std::string & str) {
 std::vector<SniffRecord> getSniffsForProcess(std::string & exec_name) {
     std::vector<SniffRecord> result;
     std::ifstream sniff_file("." + exec_name + ".sniff");
+    const auto live_pids = getAllLivePIDs();
 
     if (sniff_file.is_open()) {
         std::string line;
         while (true) {
             std::getline(sniff_file, line);
             if (line.empty()) break;
-            result.push_back(getSniffRecordFromLine(line));
+            const auto sniff = getSniffRecordFromLine(line);
+            if (live_pids.count(sniff.pid) > 0) {
+                result.push_back(sniff);
+            }
         }
-
     }
 
     return result;
