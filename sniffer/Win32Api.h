@@ -1,5 +1,7 @@
 #pragma once
 
+#pragma warning( disable : 4624 4615 )
+
 #include <string>
 #include <codecvt>
 #include <locale>
@@ -39,16 +41,6 @@ namespace win_api {
         f32
     };
 
-    class SniffRecord {
-    public:
-        SniffRecord() : pid(0), pname(""), location(0), type(SniffType::unknown) {};
-        SniffRecord(uint64_t pid, const char * pname, uint64_t location, SniffType type) : pid(pid), pname(pname), location(location), type(type) {};
-        uint64_t pid;
-        std::string pname;
-        uint64_t location;
-        SniffType type;
-    };
-
     class SniffValue {
         std::string value;
         char bdata[8] = { 0 };
@@ -65,7 +57,22 @@ namespace win_api {
         }
 
     public:
+        SniffValue() {}
         SniffValue(const char * value) : value(value) {}
+
+        void setValue(const std::string & value) {
+            this->value = value;
+        }
+
+        void setValue(int32_t value) {
+            *((int32_t *)&bdata[0]) = value;
+            has_set = true;
+        }
+
+        void setValue(float value) {
+            *((float *)&bdata[0]) = value;
+            has_set = true;
+        }
 
         const std::string & asString() {
             prime(win_api::SniffType::str);
@@ -81,6 +88,26 @@ namespace win_api {
             prime(win_api::SniffType::f32);
             return (float *)&bdata[0];
         }
+
+        SniffValue & operator=(const SniffValue & other) {
+            value = other.value;
+            for (auto i = 0; i < 8; ++i) {
+                bdata[i] = other.bdata[i];
+            }
+            has_set = other.has_set;
+            return *this;
+        }
+    };
+
+    class SniffRecord {
+    public:
+        SniffRecord() : pid(0), pname(""), location(0), type(SniffType::unknown) {};
+        SniffRecord(uint64_t pid, const char * pname, uint64_t location, SniffType type) : pid(pid), pname(pname), location(location), type(type) {};
+        uint64_t pid;
+        std::string pname;
+        uint64_t location;
+        SniffType type;
+        SniffValue value;
     };
 
     BOOL setPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege);
@@ -96,7 +123,7 @@ namespace win_api {
     void setByteAtLocationForPidAndLocation(uint64_t pid, uint64_t location, char byte_to_set);
     const char * getSniffTypeStrForType(SniffType type);
     SniffRecord getSniffRecordFromLine(std::string & str);
-    std::vector<SniffRecord> getSniffsForProcess(std::string & exec_name, SniffType sniff_type_to_consider);
-    void writeSniffsToSniffFile(const std::string & exec_name, const std::vector<SniffRecord> & sniff_records);
+    std::vector<SniffRecord> getSniffsForProcess(std::string & exec_name);
+    void writeSniffsToSniffFile(const std::string & exec_name, std::vector<SniffRecord> & sniff_records);
     SniffType getSniffTypeForStr(std::string & type_str);
 }

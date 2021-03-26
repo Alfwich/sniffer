@@ -1,4 +1,5 @@
 #include <iostream>
+#include <iomanip>
 #include <vector>
 #include <sstream>
 #include <thread>
@@ -7,6 +8,7 @@
 #include <locale>
 #include <fstream>
 #include <set>
+#include <regex>
 #include <unordered_map>
 #include <stdio.h>
 
@@ -79,29 +81,47 @@ void do_sniffs(int id, SharedMemory * sm) {
     auto replace_type = win_api::getSniffTypeForStr(replace_type_str);
     auto value_to_find = win_api::SniffValue(sm->args.at("find").c_str());
     auto mem_region_copy = win_api::MemoryRegionCopy();
+    win_api::SniffRecord record;
+    bool match = false;
     for (size_t job_id = sm->getNextJob(); job_id < sm->records.size(); job_id = sm->getNextJob()) {
         const auto & region_record = sm->records[job_id];
         getMemoryRegionCopyForMemoryRegionRecord(region_record, mem_region_copy);
         sm->thread_bytes[id] += mem_region_copy.bytes.size();
         for (uint64_t i = 0; i < mem_region_copy.bytes.size(); ++i) {
-            bool match = false;
+            match = false;
             if (i + sm->args.at("find").size() < mem_region_copy.bytes.size() && replace_type == win_api::SniffType::str) {
                 for (uint64_t j = 0; j < value_to_find.asString().size(); ++j) {
                     match = mem_region_copy.bytes[i + j] == value_to_find.asString().at(j);
                     if (!match) break;
                 }
+
+                if (match) {
+                    record.value.setValue(value_to_find.asString());
+                }
             }
             else if (i + 3 < mem_region_copy.bytes.size() && replace_type == win_api::SniffType::i32) {
                 int32_t val = *(int32_t *)&mem_region_copy.bytes[i];
                 match = val == *value_to_find.asI32Ptr();
+
+                if (match) {
+                    record.value.setValue(val);
+                }
             }
             else if (i + 3 < mem_region_copy.bytes.size() && replace_type == win_api::SniffType::f32) {
                 float val = *(float *)&mem_region_copy.bytes[i];
                 match = val == *value_to_find.asF32Ptr();
+
+                if (match) {
+                    record.value.setValue(val);
+                }
             }
 
             if (match) {
-                sm->thread_sniffs[id].emplace_back(region_record.AssociatedPid, "", (uint64_t)(region_record.BaseAddress) + i, replace_type);
+                record.pid = region_record.AssociatedPid;
+                record.pname = sm->args.at("pname");
+                record.location = (uint64_t)(region_record.BaseAddress) + i;
+                record.type = replace_type;
+                sm->thread_sniffs[id].push_back(record);
             }
         }
     }
@@ -117,6 +137,8 @@ bool resniff_cmp(std::string & pred, int32_t a, int32_t b) {
     else if (pred == "eq") {
         return a == b;
     }
+
+    return false;
 }
 
 bool resniff_cmp(std::string & pred, float a, float b) {
@@ -129,32 +151,38 @@ bool resniff_cmp(std::string & pred, float a, float b) {
     else if (pred == "eq") {
         return a == b;
     }
+
+    return false;
 }
 
 void do_resniffs(int id, SharedMemory * sm) {
-    auto resniff_type_str = sm->args.at("type");
-    auto resniff_pred_str = sm->args.at("sniff-pred");
-    auto resniff_type = win_api::getSniffTypeForStr(resniff_type_str);
-    auto value_to_find = win_api::SniffValue(sm->args.at("find").c_str());
+    auto resniff_pred_str = sm->args.at("spred");
     auto mem_region_copy = win_api::MemoryRegionCopy();
     for (size_t job_id = sm->getNextJob(); job_id < sm->sniffs.size(); job_id = sm->getNextJob()) {
-        const auto & sniff = sm->sniffs.at(job_id);
+        auto & sniff = sm->sniffs.at(job_id);
         bool match = false;
         win_api::getMemoryForSniffRecord(sniff, mem_region_copy);
 
-        if (job_id + sm->args.at("find").size() < mem_region_copy.bytes.size() && resniff_type == win_api::SniffType::str) {
-            for (uint64_t j = 0; j < value_to_find.asString().size(); ++j) {
-                match = mem_region_copy.bytes[j] == value_to_find.asString().at(j);
+        if (sniff.type == win_api::SniffType::str && job_id + sniff.value.asString().size() < mem_region_copy.bytes.size()) {
+            for (uint64_t j = 0; j < sniff.value.asString().size(); ++j) {
+                match = mem_region_copy.bytes[j] == sniff.value.asString().at(j);
                 if (!match) break;
             }
         }
-        else if (job_id + 3 < mem_region_copy.bytes.size() && resniff_type == win_api::SniffType::i32) {
+        else if (sniff.type == win_api::SniffType::i32 && job_id + 3 < mem_region_copy.bytes.size()) {
             int32_t val = *(int32_t *)&mem_region_copy.bytes[0];
-            match = resniff_cmp(resniff_pred_str, val, *value_to_find.asI32Ptr());
+            match = resniff_cmp(resniff_pred_str, val, *sniff.value.asI32Ptr());
+
+            if (match) {
+                sniff.value.setValue(val);
+            }
         }
-        else if (job_id + 3 < mem_region_copy.bytes.size() && resniff_type== win_api::SniffType::f32) {
+        else if (sniff.type == win_api::SniffType::f32 && job_id + 3 < mem_region_copy.bytes.size()) {
             float val = *(float *)&mem_region_copy.bytes[0];
-            match = resniff_cmp(resniff_pred_str, val, *value_to_find.asF32Ptr());
+            match = resniff_cmp(resniff_pred_str, val, *sniff.value.asF32Ptr());
+            if (match) {
+                sniff.value.setValue(val);
+            }
         }
 
         if (!match) {
@@ -166,7 +194,6 @@ void do_resniffs(int id, SharedMemory * sm) {
 bool check_args(const std::unordered_map<std::string, std::string> & args) {
     static std::unordered_map <std::string, std::vector<std::string> > required = {
         { "action", { "sniff", "replace", "resniff" } },
-        { "type", { "i32", "f32", "str" } }
     };
 
     for (const auto & required_pair : required) {
@@ -215,14 +242,37 @@ std::unordered_map<std::string, std::string> getArguments(int argc, char * argv[
     return result;
 }
 
-std::vector<void (*)(int, SharedMemory *)> get_actions_for_args(const std::unordered_map<std::string, std::string> & args, const SharedMemory & mem) {
+std::vector<void (*)(int, SharedMemory *)> getActionsForArgsAndSharedMem(const std::unordered_map<std::string, std::string> & args, const SharedMemory & mem) {
     auto result = std::vector<void (*)(int, SharedMemory *)>();
     if (args.at("action") == "sniff") {
+        if (args.count("type") == 0) {
+            std::cout << "Expected -type to be provided when doing a sniff operation" << std::endl;
+            result.clear();
+            return result;
+        }
+
+        if (args.count("find") == 0) {
+            std::cout << "Expected -find to be provided when doing a sniff operation" << std::endl;
+            result.clear();
+            return result;
+        }
+
         result.push_back(do_sniffs);
     }
-
-    if (args.at("action") == "replace") {
+    else if (args.at("action") == "replace") {
         if (mem.sniffs.empty()) {
+            if (args.count("type") == 0) {
+                std::cout << "Expected -type to be provided when doing a replace operation without sniff file" << std::endl;
+                result.clear();
+                return result;
+            }
+
+            if (args.count("find") == 0) {
+                std::cout << "Expected -find to be provided when doing a replace operation without sniff file" << std::endl;
+                result.clear();
+                return result;
+            }
+
             std::cout << "No sniff records located - doing sniff before replace" << std::endl;
             result.push_back(do_sniffs);
         }
@@ -232,20 +282,18 @@ std::vector<void (*)(int, SharedMemory *)> get_actions_for_args(const std::unord
             result.clear();
             return result;
         }
-        else {
-            result.push_back(do_replaces);
-        }
-    }
 
-    if (args.at("action") == "resniff") {
+        result.push_back(do_replaces);
+    }
+    else if (args.at("action") == "resniff") {
         if (mem.sniffs.size() == 0) {
             std::cout << "Expected to find cached sniffs when using action resniff - run sniff to generate a starting sniff file" << std::endl;
             result.clear();
             return result;
         }
 
-        if (args.count("sniff-pred") == 0) {
-            std::cout << "Expected to have resniff predicate compare [lt|gt|eq] to compare existing records against" << std::endl;
+        if (args.count("spred") == 0) {
+            std::cout << "Expected to have resniff predicate compare [lt|gt|eq] to compare existing records against is in process memory" << std::endl;
             result.clear();
             return result;
         }
@@ -261,7 +309,7 @@ uint32_t getNumThreads(std::unordered_map<std::string, std::string> & args) {
     return max(arg_threads, 1);
 }
 
-void processResniffsIfNeeded(SharedMemory & mem) {
+size_t processResniffsIfNeeded(SharedMemory & mem) {
     std::set<size_t> sniffs_to_exclude;
     for (const auto & resniff : mem.thread_resniffs) {
         for (const auto index_to_exclude : resniff) {
@@ -278,17 +326,49 @@ void processResniffsIfNeeded(SharedMemory & mem) {
     }
 
     mem.sniffs = new_records;
+
+    return sniffs_to_exclude.size();
+}
+
+void dumpSniffs(const SharedMemory & mem) {
+    auto i = 0;
+    for (auto record : mem.sniffs) {
+        i++;
+        std::cout << "\t SniffRecord(pname='" << record.pname << "', pid=" << record.pid << ", location=";
+        std::cout << "0x" << std::setw(16) << std::setfill('0') << std::hex << record.location << std::dec;
+        std::cout << ", type=" << win_api::getSniffTypeStrForType(record.type) << ", value=";
+        switch (record.type) {
+        case win_api::SniffType::i32:
+            std::cout << *record.value.asI32Ptr();
+            break;
+        case win_api::SniffType::f32:
+            std::cout << *record.value.asF32Ptr();
+            break;
+        case win_api::SniffType::str:
+            std::cout << record.value.asString();
+            break;
+        default:
+            std::cout << "???";
+        }
+        std::cout << ")" << std::endl;
+
+        if (i == 20) {
+            std::cout << "\t\t ... [" << mem.sniffs.size() - 20 << " more records - see sniff file] ..." << std::endl;
+            break;
+        }
+    }
 }
 
 int main(int argc, char * argv[]) {
     auto args = getArguments(argc, argv);
 
     if (args.empty()) {
-        std::cout << "Expected usage ./sniffer.exe [sniff|resniff|replace] -pname 'process_name' -sniff-pred [gt|eq|lt] -type [i32|f32|str] -find 'value_to_replace' -set 'value_to_set' -j [num threads to use]" << std::endl;
+        std::cout << "Expected usage ./sniffer.exe [sniff|resniff|replace] -pname 'process_name' -spred [gt|eq|lt] -type [i32|f32|str] -find 'value_to_replace' -set 'value_to_set' -j [num threads to use]" << std::endl;
         return 0;
     }
 
-    auto sniffs = win_api::getSniffsForProcess(args["pname"], win_api::getSniffTypeForStr(args["type"]));
+    auto sniffs = win_api::getSniffsForProcess(args.at("pname"));
+    if (args.at("action") == "sniff") sniffs.clear();
 
     win_api::setDebugPriv();
     ProfileTimer timer("sniffer");
@@ -305,7 +385,8 @@ int main(int argc, char * argv[]) {
 
     const auto num_threads = getNumThreads(args);
     SharedMemory mem(args, sniffs, records, num_threads);
-    const auto actions = get_actions_for_args(args, mem);
+    const auto actions = getActionsForArgsAndSharedMem(args, mem);
+    if (actions.empty()) return 0;
     for (const auto action : actions) {
         std::vector<std::thread> threads;
         for (uint32_t i = 0; i < num_threads; ++i) {
@@ -329,23 +410,32 @@ int main(int argc, char * argv[]) {
 
     size_t total_bytes_considered = 0;
     size_t total_replacements = 0;
-    size_t total_sniffs = 0;
+    size_t total_sniffs_eliminated = processResniffsIfNeeded(mem);
 
     for (uint32_t i = 0; i < num_threads; ++i) {
         total_bytes_considered += mem.thread_bytes[i];
         total_replacements += mem.thread_edits[i];
-        total_sniffs += mem.thread_sniffs[i].size();
     }
 
-    processResniffsIfNeeded(mem);
-    writeSniffsToSniffFile(executable_to_consider, mem.sniffs);
+    if (args.at("action") == "replace") {
+        std::cout <<
+            "Found and replaced " << total_replacements <<
+            " instances to '" << unwrap_or_default(mem.args, "set") << "'" <<
+            " across " << pids_to_consider.size() << " processes and " << mem.records.size() << " mem regions considering " << total_bytes_considered << " total bytes" <<
+            " for " << executable_to_consider << std::endl;
+        std::cout << "Old sniff records:" << std::endl;
+        dumpSniffs(mem);
+    }
+    else if (args.at("action") == "sniff") {
+        std::cout << "Found " << mem.sniffs.size() << " records: " << std::endl;
+        dumpSniffs(mem);
+    }
+    else if (args.at("action") == "resniff") {
+        std::cout << "Filtered " << total_sniffs_eliminated << " records. Remaining records: " << std::endl;
+        dumpSniffs(mem);
+    }
 
-    std::cout <<
-        "Found and replaced " << total_replacements <<
-        " instances of \"" << unwrap_or_default(mem.args, "find") <<
-        "\" to \"" << unwrap_or_default(mem.args, "set") <<
-        "\" across " << pids_to_consider.size() << " processes and " << mem.records.size() << " mem regions considering " << total_bytes_considered << " total bytes" <<
-        " for " << executable_to_consider << std::endl;
+    writeSniffsToSniffFile(executable_to_consider, mem.sniffs);
 
     return 0;
 }
