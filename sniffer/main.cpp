@@ -49,7 +49,7 @@ void do_replaces(int id, SharedMemory * sm) {
     auto value_to_set = win_api::SniffValue(sm->args.at("set").c_str());
 
     for (size_t job_id = sm->getNextJob(); job_id < sm->sniffs.size(); job_id = sm->getNextJob()) {
-        const auto & sniff = sm->sniffs.at(job_id);
+        auto & sniff = sm->sniffs.at(job_id);
 
         switch (sniff.type) {
         case win_api::SniffType::str: {
@@ -57,6 +57,17 @@ void do_replaces(int id, SharedMemory * sm) {
             for (auto j = 0; j < value_to_set.asString().size(); ++j) {
                 win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, value_to_set.asString()[j]);
             }
+            sniff.value.setValue(value_to_set.asString());
+        } break;
+
+        case win_api::SniffType::i8: {
+            sm->thread_edits[id]++;
+            int8_t value = value_to_set.asI8();
+            char * value_byte_ptr = (char *)&value;
+            for (auto j = 0; j < 1; ++j) {
+                win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
+            }
+            sniff.value.setValue(value);
         } break;
         case win_api::SniffType::i32: {
             sm->thread_edits[id]++;
@@ -65,14 +76,64 @@ void do_replaces(int id, SharedMemory * sm) {
             for (auto j = 0; j < 4; ++j) {
                 win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
             }
+            sniff.value.setValue(value);
         } break;
-        case win_api::SniffType::f32: {
+        case win_api::SniffType::i64: {
             sm->thread_edits[id]++;
-            float value = value_to_set.asF32();
+            int64_t value = value_to_set.asI64();
+            char * value_byte_ptr = (char *)&value;
+            for (auto j = 0; j < 8; ++j) {
+                win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
+            }
+            sniff.value.setValue(value);
+        } break;
+
+        case win_api::SniffType::u8: {
+            sm->thread_edits[id]++;
+            uint8_t value = value_to_set.asU8();
+            char * value_byte_ptr = (char *)&value;
+            for (auto j = 0; j < 1; ++j) {
+                win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
+            }
+            sniff.value.setValue(value);
+        } break;
+        case win_api::SniffType::u32: {
+            sm->thread_edits[id]++;
+            uint32_t value = value_to_set.asU32();
             char * value_byte_ptr = (char *)&value;
             for (auto j = 0; j < 4; ++j) {
                 win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
             }
+            sniff.value.setValue(value);
+        } break;
+        case win_api::SniffType::u64: {
+            sm->thread_edits[id]++;
+            uint64_t value = value_to_set.asU64();
+            char * value_byte_ptr = (char *)&value;
+            for (auto j = 0; j < 8; ++j) {
+                win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
+            }
+            sniff.value.setValue(value);
+        } break;
+
+        case win_api::SniffType::f32: {
+            sm->thread_edits[id]++;
+            float_t value = value_to_set.asF32();
+            char * value_byte_ptr = (char *)&value;
+            for (auto j = 0; j < 4; ++j) {
+                win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
+            }
+            sniff.value.setValue(value);
+        } break;
+
+        case win_api::SniffType::f64: {
+            sm->thread_edits[id]++;
+            double_t value = value_to_set.asF64();
+            char * value_byte_ptr = (char *)&value;
+            for (auto j = 0; j < 8; ++j) {
+                win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
+            }
+            sniff.value.setValue(value);
         } break;
         }
     }
@@ -175,7 +236,7 @@ void do_sniffs(int id, SharedMemory * sm) {
                 }
             }
 
-            if (i + 3 < mem_region_copy.bytes.size()) {
+            if (value_to_find.num_ref_bytes() <= 8 && i + 3 < mem_region_copy.bytes.size()) {
                 float_t val = *(float_t *)&mem_region_copy.bytes[i];
                 match = val == value_to_find.asF32();
 
@@ -187,7 +248,7 @@ void do_sniffs(int id, SharedMemory * sm) {
                 }
             }
 
-            if (i + 7 < mem_region_copy.bytes.size()) {
+            if (value_to_find.num_ref_bytes() <= 8 && i + 7 < mem_region_copy.bytes.size()) {
                 double_t val = *(double_t *)&mem_region_copy.bytes[i];
                 match = val == value_to_find.asF32();
 
@@ -231,11 +292,20 @@ bool resniff_cmp_f(std::string & pred, double_t a, double_t b) {
 
 void do_resniffs(int id, SharedMemory * sm) {
     auto resniff_pred_str = sm->args.at("spred");
+    auto resniff_type_pred_str = sm->args.count("stype") > 0 ? sm->args.at("stype") : "";
+    auto resniff_type_pred = win_api::getSniffTypeForStr(resniff_type_pred_str);
     auto mem_region_copy = win_api::MemoryRegionCopy();
     for (size_t job_id = sm->getNextJob(); job_id < sm->sniffs.size(); job_id = sm->getNextJob()) {
         auto & sniff = sm->sniffs.at(job_id);
         bool match = false;
         win_api::getMemoryForSniffRecord(sniff, mem_region_copy);
+
+        if (resniff_type_pred != win_api::SniffType::unknown) {
+            if (sniff.type != resniff_type_pred) {
+                sm->thread_resniffs[id].insert(job_id);
+                continue;
+            }
+        }
 
         if (sniff.type == win_api::SniffType::str) {
             for (uint64_t j = 0; j < sniff.value.asString().size(); ++j) {
@@ -284,7 +354,7 @@ void do_resniffs(int id, SharedMemory * sm) {
             }
         }
         else if (sniff.type == win_api::SniffType::u64) {
-            uint64_t val = *(uint64_t*)&mem_region_copy.bytes[0];
+            uint64_t val = *(uint64_t *)&mem_region_copy.bytes[0];
             match = resniff_cmp_i(resniff_pred_str, val, sniff.value.asU64());
 
             if (match) {
@@ -443,6 +513,7 @@ size_t processResniffsIfNeeded(SharedMemory & mem) {
 void dumpSniffs(const SharedMemory & mem) {
     auto i = 0;
     for (auto record : mem.sniffs) {
+        record.value.updateStringValue();
         i++;
         std::cout << "\t SniffRecord(pname='" << record.pname << "', pid=" << record.pid << ", location=";
         std::cout << "0x" << std::setw(16) << std::setfill('0') << std::hex << record.location << std::dec;
@@ -491,7 +562,7 @@ int main(int argc, char * argv[]) {
     auto args = getArguments(argc, argv);
 
     if (args.empty()) {
-        std::cout << "Expected usage ./sniffer.exe [sniff|resniff|replace] -pname 'process_name' -spred [gt|eq|lt] -find 'value_to_replace' -set 'value_to_set' -j [num threads to use]" << std::endl;
+        std::cout << "Expected usage ./sniffer.exe [sniff|resniff|replace] -pname 'process_name' -spred [gt|eq|lt] -stype [i8|i32|i64|u8|u32|u64|f32|f64|str] -find 'value_to_replace' -set 'value_to_set' -j [num threads to use]" << std::endl;
         return 0;
     }
 
@@ -559,7 +630,7 @@ int main(int argc, char * argv[]) {
         dumpSniffs(mem);
     }
     else if (args.at("action") == "resniff") {
-        std::cout << "Filtered " << total_sniffs_eliminated << " records. Remaining records: " << std::endl;
+        std::cout << "Filtered " << total_sniffs_eliminated << " records which ! " << unwrap_or_default(args, "spred") << " the original value. Remaining records: " << std::endl;
         dumpSniffs(mem);
     }
 

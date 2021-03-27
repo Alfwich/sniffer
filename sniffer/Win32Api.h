@@ -53,7 +53,7 @@ namespace win_api {
         std::uint64_t uint_value = 0;
         std::double_t fp_value = 0.0;
         win_api::SniffType ref_type = SniffType::unknown;
-        uint64_t ref_bytes = 0;
+        uint64_t ref_bytes = 999;
         bool primed = false;
 
         void prime() {
@@ -99,7 +99,7 @@ namespace win_api {
                         int_value = 0;
                         uint_value = 0;
                         fp_value = 0.0;
-                        ref_bytes = 0;
+                        ref_bytes = 999;
                     }
                 }
 
@@ -110,6 +110,25 @@ namespace win_api {
     public:
         SniffValue() {}
         SniffValue(const char * value) : str_value(value), ref_type(SniffType::str) {}
+
+        void updateStringValue() {
+            switch (ref_type) {
+            case SniffType::i8:
+            case SniffType::i32:
+            case SniffType::i64:
+                str_value = std::to_string(int_value);
+                break;
+            case SniffType::u8:
+            case SniffType::u32:
+            case SniffType::u64:
+                str_value = std::to_string(uint_value);
+                break;
+            case SniffType::f32:
+            case SniffType::f64:
+                str_value = std::to_string(fp_value);
+                break;
+            }
+        }
 
         void setValue(const std::string & value) {
             this->str_value = value;
