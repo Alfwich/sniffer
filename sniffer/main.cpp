@@ -120,7 +120,7 @@ void do_sniffs(int id, SharedMemory * sm) {
                 }
             }
 
-            if (value_to_find.num_ref_bytes() <= 4 &&  i + 3 < mem_region_copy.bytes.size()) {
+            if (value_to_find.num_ref_bytes() <= 4 && i + 3 < mem_region_copy.bytes.size()) {
                 uint32_t val = *(uint32_t *)&mem_region_copy.bytes[i];
                 match = val == value_to_find.asU32();
 
@@ -131,7 +131,7 @@ void do_sniffs(int id, SharedMemory * sm) {
                 }
             }
 
-            if (value_to_find.num_ref_bytes() <= 8 &&  i + 7 < mem_region_copy.bytes.size()) {
+            if (value_to_find.num_ref_bytes() <= 8 && i + 7 < mem_region_copy.bytes.size()) {
                 uint64_t val = *(uint64_t *)&mem_region_copy.bytes[i];
                 match = val == value_to_find.asU64();
 
@@ -153,7 +153,7 @@ void do_sniffs(int id, SharedMemory * sm) {
                 }
             }
 
-            if (value_to_find.num_ref_bytes() <= 4 &&  i + 3 < mem_region_copy.bytes.size()) {
+            if (value_to_find.num_ref_bytes() <= 4 && i + 3 < mem_region_copy.bytes.size()) {
                 int32_t val = *(int32_t *)&mem_region_copy.bytes[i];
                 match = val == value_to_find.asI32();
 
@@ -164,7 +164,7 @@ void do_sniffs(int id, SharedMemory * sm) {
                 }
             }
 
-            if (value_to_find.num_ref_bytes() <= 8 &&  i + 7 < mem_region_copy.bytes.size()) {
+            if (value_to_find.num_ref_bytes() <= 8 && i + 7 < mem_region_copy.bytes.size()) {
                 int64_t val = *(int64_t *)&mem_region_copy.bytes[i];
                 match = val == value_to_find.asI64();
 
@@ -201,7 +201,7 @@ void do_sniffs(int id, SharedMemory * sm) {
     }
 }
 
-bool resniff_cmp(std::string & pred, int32_t a, int32_t b) {
+bool resniff_cmp_i(std::string & pred, uint64_t a, uint64_t b) {
     if (pred == "lt") {
         return a < b;
     }
@@ -215,7 +215,7 @@ bool resniff_cmp(std::string & pred, int32_t a, int32_t b) {
     return false;
 }
 
-bool resniff_cmp(std::string & pred, float a, float b) {
+bool resniff_cmp_f(std::string & pred, double_t a, double_t b) {
     if (pred == "lt") {
         return a < b;
     }
@@ -237,27 +237,75 @@ void do_resniffs(int id, SharedMemory * sm) {
         bool match = false;
         win_api::getMemoryForSniffRecord(sniff, mem_region_copy);
 
-        if (sniff.type == win_api::SniffType::str && job_id + sniff.value.asString().size() < mem_region_copy.bytes.size()) {
+        if (sniff.type == win_api::SniffType::str) {
             for (uint64_t j = 0; j < sniff.value.asString().size(); ++j) {
                 match = mem_region_copy.bytes[j] == sniff.value.asString().at(j);
                 if (!match) break;
             }
         }
-        else if (sniff.type == win_api::SniffType::i32 && job_id + 3 < mem_region_copy.bytes.size()) {
-            int32_t val = *(int32_t *)&mem_region_copy.bytes[0];
-            match = resniff_cmp(resniff_pred_str, val, sniff.value.asI32());
+        else if (sniff.type == win_api::SniffType::i8) {
+            int8_t val = *(int8_t *)&mem_region_copy.bytes[0];
+            match = resniff_cmp_i(resniff_pred_str, val, sniff.value.asI8());
 
             if (match) {
                 sniff.value.setValue(val);
             }
         }
-        else if (sniff.type == win_api::SniffType::f32 && job_id + 3 < mem_region_copy.bytes.size()) {
-            float val = *(float *)&mem_region_copy.bytes[0];
-            match = resniff_cmp(resniff_pred_str, val, sniff.value.asF32());
+        else if (sniff.type == win_api::SniffType::i32) {
+            int32_t val = *(int32_t *)&mem_region_copy.bytes[0];
+            match = resniff_cmp_i(resniff_pred_str, val, sniff.value.asI32());
+
             if (match) {
                 sniff.value.setValue(val);
             }
         }
+        else if (sniff.type == win_api::SniffType::i64) {
+            int64_t val = *(int64_t *)&mem_region_copy.bytes[0];
+            match = resniff_cmp_i(resniff_pred_str, val, sniff.value.asI64());
+
+            if (match) {
+                sniff.value.setValue(val);
+            }
+        }
+        else if (sniff.type == win_api::SniffType::u8) {
+            uint8_t val = *(uint8_t *)&mem_region_copy.bytes[0];
+            match = resniff_cmp_i(resniff_pred_str, val, sniff.value.asU8());
+
+            if (match) {
+                sniff.value.setValue(val);
+            }
+        }
+        else if (sniff.type == win_api::SniffType::u32) {
+            uint32_t val = *(uint32_t *)&mem_region_copy.bytes[0];
+            match = resniff_cmp_i(resniff_pred_str, val, sniff.value.asU32());
+
+            if (match) {
+                sniff.value.setValue(val);
+            }
+        }
+        else if (sniff.type == win_api::SniffType::u64) {
+            uint64_t val = *(uint64_t*)&mem_region_copy.bytes[0];
+            match = resniff_cmp_i(resniff_pred_str, val, sniff.value.asU64());
+
+            if (match) {
+                sniff.value.setValue(val);
+            }
+        }
+        else if (sniff.type == win_api::SniffType::f32) {
+            float_t val = *(float_t *)&mem_region_copy.bytes[0];
+            match = resniff_cmp_f(resniff_pred_str, val, sniff.value.asF32());
+            if (match) {
+                sniff.value.setValue(val);
+            }
+        }
+        else if (sniff.type == win_api::SniffType::f64) {
+            double_t val = *(double_t *)&mem_region_copy.bytes[0];
+            match = resniff_cmp_f(resniff_pred_str, val, sniff.value.asF64());
+            if (match) {
+                sniff.value.setValue(val);
+            }
+        }
+
 
         if (!match) {
             sm->thread_resniffs[id].insert(job_id);
