@@ -239,8 +239,14 @@ namespace win_api {
     const char * getSniffTypeStrForType(SniffType type) {
         switch (type) {
         case SniffType::str: return "str";
+        case SniffType::i8: return "i8";
         case SniffType::i32: return "i32";
+        case SniffType::i64: return "i64";
+        case SniffType::u8: return "u8";
+        case SniffType::u32: return "u32";
+        case SniffType::u64: return "u64";
         case SniffType::f32: return "f32";
+        case SniffType::f64: return "f64";
         default:
         case SniffType::unknown: return "unknown";
         }
@@ -306,13 +312,31 @@ namespace win_api {
         std::ofstream sniff_file("." + exec_name + ".sniff");
         if (sniff_file.is_open()) {
             for (auto & record : sniff_records) {
-                sniff_file << exec_name << SNIFF_FILE_DELIM << record.pid << SNIFF_FILE_DELIM << record.location << SNIFF_FILE_DELIM << getSniffTypeStrForType(record.type);// << std::endl;
+                sniff_file << exec_name << SNIFF_FILE_DELIM << record.pid << SNIFF_FILE_DELIM << record.location << SNIFF_FILE_DELIM << getSniffTypeStrForType(record.type);
                 switch (record.type) {
+                case SniffType::i8:
+                    sniff_file << SNIFF_FILE_DELIM << record.value.asI8() << std::endl;
+                    break;
                 case SniffType::i32:
-                    sniff_file << SNIFF_FILE_DELIM << *record.value.asI32Ptr() << std::endl;
+                    sniff_file << SNIFF_FILE_DELIM << record.value.asI32() << std::endl;
+                    break;
+                case SniffType::i64:
+                    sniff_file << SNIFF_FILE_DELIM << record.value.asI64() << std::endl;
+                    break;
+                case SniffType::u8:
+                    sniff_file << SNIFF_FILE_DELIM << record.value.asU8() << std::endl;
+                    break;
+                case SniffType::u32:
+                    sniff_file << SNIFF_FILE_DELIM << record.value.asU32() << std::endl;
+                    break;
+                case SniffType::u64:
+                    sniff_file << SNIFF_FILE_DELIM << record.value.asU64() << std::endl;
                     break;
                 case SniffType::f32:
-                    sniff_file << SNIFF_FILE_DELIM << *record.value.asF32Ptr() << std::endl;
+                    sniff_file << SNIFF_FILE_DELIM << record.value.asF32() << std::endl;
+                    break;
+                case SniffType::f64:
+                    sniff_file << SNIFF_FILE_DELIM << record.value.asF64() << std::endl;
                     break;
                 case SniffType::str:
                     sniff_file << SNIFF_FILE_DELIM << record.value.asString() << std::endl;
@@ -328,11 +352,29 @@ namespace win_api {
         if (type_str == "str") {
             return SniffType::str;
         }
+        else if (type_str == "i8") {
+            return SniffType::i8;
+        }
         else if (type_str == "i32") {
             return SniffType::i32;
         }
+        else if (type_str == "i64") {
+            return SniffType::i64;
+        }
+        else if (type_str == "u8") {
+            return SniffType::u8;
+        }
+        else if (type_str == "u32") {
+            return SniffType::u32;
+        }
+        else if (type_str == "u64") {
+            return SniffType::u64;
+        }
         else if (type_str == "f32") {
             return SniffType::f32;
+        }
+        else if (type_str == "f64") {
+            return SniffType::f64;
         }
 
         return SniffType::unknown;
