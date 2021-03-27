@@ -49,6 +49,7 @@ namespace win_api {
 
     class SniffValue {
         std::string str_value = "";
+        std::string old_str_value = "";
         std::int64_t int_value = 0;
         std::uint64_t uint_value = 0;
         std::double_t fp_value = 0.0;
@@ -112,28 +113,72 @@ namespace win_api {
         SniffValue(const char * value) : str_value(value), ref_type(SniffType::str) {}
 
         void updateStringValue() {
+            std::string new_value;
+
             switch (ref_type) {
             case SniffType::i8:
             case SniffType::i32:
             case SniffType::i64:
-                str_value = std::to_string(int_value);
+                new_value = std::to_string(int_value);
                 break;
             case SniffType::u8:
             case SniffType::u32:
             case SniffType::u64:
-                str_value = std::to_string(uint_value);
+                new_value = std::to_string(uint_value);
                 break;
             case SniffType::f32:
             case SniffType::f64:
-                str_value = std::to_string(fp_value);
+                new_value = std::to_string(fp_value);
+                break;
+            case SniffType::str:
+                new_value = str_value;
                 break;
             }
+
+            str_value = new_value;
+        }
+
+        bool compare_i(uint64_t test_int) {
+            switch (ref_type) {
+            case SniffType::i8:
+            case SniffType::i32:
+            case SniffType::i64:
+            case SniffType::u8:
+            case SniffType::u32:
+            case SniffType::u64:
+                return test_int == int_value;
+            }
+
+            return false;
+        }
+
+        bool compare_s(std::string & test_str) {
+            switch (ref_type) {
+            case SniffType::str:
+                return test_str == str_value;
+            }
+
+            return false;
+        }
+
+        bool compare_f(double_t test_fp) {
+            switch (ref_type) {
+            case SniffType::f32:
+            case SniffType::f64:
+                return test_fp == fp_value;
+            }
+
+            return false;
         }
 
         void setValue(const std::string & value) {
             this->str_value = value;
             ref_type = SniffType::str;
             ref_bytes = 0;
+        }
+
+        void setOldValue(const std::string & old_value) {
+            old_str_value = old_value;
         }
 
         void setValue(int8_t value) {
@@ -189,6 +234,10 @@ namespace win_api {
             return str_value;
         }
 
+        const std::string & getOldStringValue() {
+            return old_str_value;
+        }
+
         const int8_t asI8() {
             prime();
             return static_cast<int8_t>(int_value);
@@ -236,6 +285,7 @@ namespace win_api {
         SniffValue & operator=(const SniffValue & other) {
             str_value = other.str_value;
             int_value = other.int_value;
+            uint_value = other.uint_value;
             fp_value = other.fp_value;
             ref_type = other.ref_type;
             primed = other.primed;
@@ -263,11 +313,11 @@ namespace win_api {
     std::vector<MemoryRegionRecord> getAllMemoryRegionsForPID(DWORD pid);
     std::vector<DWORD> getPIDSForProcessName(std::wstring proc_name);
     void getMemoryRegionCopyForMemoryRegionRecord(const MemoryRegionRecord & record, MemoryRegionCopy & out_region);
-    void getMemoryForSniffRecord(const SniffRecord & record, MemoryRegionCopy & out_region);
+    void getMemoryForSniffRecord(SniffRecord & record, MemoryRegionCopy & out_region);
     void setByteAtLocationForPidAndLocation(uint64_t pid, uint64_t location, char byte_to_set);
     const char * getSniffTypeStrForType(SniffType type);
-    SniffRecord getSniffRecordFromLine(std::string & str);
-    std::vector<SniffRecord> getSniffsForProcess(std::string & exec_name);
+    SniffRecord getSniffRecordFromLine(const std::string & str);
+    std::vector<SniffRecord> getSniffsForProcess(const std::string & exec_name);
     void writeSniffsToSniffFile(const std::string & exec_name, std::vector<SniffRecord> & sniff_records);
-    SniffType getSniffTypeForStr(std::string & type_str);
+    SniffType getSniffTypeForStr(const std::string & type_str);
 }

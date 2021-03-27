@@ -183,7 +183,7 @@ namespace win_api {
         CloseHandle(proc_handle);
     }
 
-    void getMemoryForSniffRecord(const SniffRecord & record, MemoryRegionCopy & out_region) {
+    void getMemoryForSniffRecord(SniffRecord & record, MemoryRegionCopy & out_region) {
         const auto proc_handle = OpenProcess(
             PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION,
             false,
@@ -191,7 +191,8 @@ namespace win_api {
         );
 
         out_region.bytes.clear();
-        char buffer[8];
+        uint64_t read_size = record.type == SniffType::str ? record.value.asString().size() : 8;
+        char * buffer = new char[read_size]; 
 
         SIZE_T num_bytes_read = 0;
 
@@ -199,13 +200,15 @@ namespace win_api {
             proc_handle,
             (LPVOID)record.location,
             (LPVOID)buffer,
-            8,
+            read_size,
             &num_bytes_read
         );
 
-        for (auto i = 0; i < num_bytes_read; ++i) {
+        for (uint64_t i = 0; i < num_bytes_read && i < read_size; ++i) {
             out_region.bytes.push_back(buffer[i]);
         }
+
+        delete[] buffer;
 
         CloseHandle(proc_handle);
     }
@@ -288,9 +291,9 @@ namespace win_api {
         return result;
     }
 
-    std::vector<SniffRecord> getSniffsForProcess(std::string & exec_name) {
+    std::vector<SniffRecord> getSniffsForProcess(const std::string & sniff_file_name) {
         std::vector<SniffRecord> result;
-        std::ifstream sniff_file("." + exec_name + ".sniff");
+        std::ifstream sniff_file(sniff_file_name);
         const auto live_pids = getAllLivePIDs();
 
         if (sniff_file.is_open()) {
@@ -299,7 +302,7 @@ namespace win_api {
                 std::getline(sniff_file, line);
                 if (line.empty()) break;
                 auto sniff = getSniffRecordFromLine(line);
-                if (live_pids.count(sniff.pid) > 0 && sniff.pname == exec_name) {
+                if (live_pids.count(sniff.pid) > 0) {
                     result.push_back(sniff);
                 }
             }
@@ -308,11 +311,11 @@ namespace win_api {
         return result;
     }
 
-    void writeSniffsToSniffFile(const std::string & exec_name, std::vector<SniffRecord> & sniff_records) {
-        std::ofstream sniff_file("." + exec_name + ".sniff");
+    void writeSniffsToSniffFile(const std::string & sniff_file_name, std::vector<SniffRecord> & sniff_records) {
+        std::ofstream sniff_file(sniff_file_name);
         if (sniff_file.is_open()) {
             for (auto & record : sniff_records) {
-                sniff_file << exec_name << SNIFF_FILE_DELIM << record.pid << SNIFF_FILE_DELIM << record.location << SNIFF_FILE_DELIM << getSniffTypeStrForType(record.type);
+                sniff_file << sniff_file_name << SNIFF_FILE_DELIM << record.pid << SNIFF_FILE_DELIM << record.location << SNIFF_FILE_DELIM << getSniffTypeStrForType(record.type);
                 switch (record.type) {
                 case SniffType::i8:
                     sniff_file << SNIFF_FILE_DELIM << record.value.asI8() << std::endl;
@@ -348,7 +351,7 @@ namespace win_api {
         }
     }
 
-    SniffType getSniffTypeForStr(std::string & type_str) {
+    SniffType getSniffTypeForStr(const std::string & type_str) {
         if (type_str == "str") {
             return SniffType::str;
         }
