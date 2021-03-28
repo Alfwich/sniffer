@@ -82,9 +82,7 @@ namespace win_api {
                     break;
                 case SniffType::str:
                     try {
-                        int_value = std::stol(str_value);
                         uint_value = std::stoull(str_value);
-                        fp_value = std::stod(str_value);
 
                         if (uint_value <= 0xFFu) {
                             ref_bytes = 1;
@@ -97,10 +95,22 @@ namespace win_api {
                         }
                     }
                     catch (...) {
-                        int_value = 0;
                         uint_value = 0;
-                        fp_value = 0.0;
                         ref_bytes = 999;
+                    }
+
+                    try {
+                        int_value = std::stoll(str_value);
+                    }
+                    catch (...) {
+                        int_value = 0;
+                    }
+
+                    try {
+                        fp_value = std::stod(str_value);
+                    }
+                    catch (...) {
+                        fp_value = 0.0;
                     }
                 }
 
@@ -217,13 +227,13 @@ namespace win_api {
             ref_bytes = 8;
         }
 
-        void setValue(float value) {
+        void setValue(float_t value) {
             fp_value = value;
             ref_type = SniffType::f32;
             ref_bytes = 4;
         }
 
-        void setValue(double value) {
+        void setValue(double_t value) {
             fp_value = value;
             ref_type = SniffType::f64;
             ref_bytes = 8;
@@ -265,7 +275,7 @@ namespace win_api {
 
         const uint64_t asU64() {
             prime();
-            return int_value;
+            return uint_value;
         }
 
         const float_t asF32() {
