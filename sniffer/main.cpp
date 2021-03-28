@@ -596,7 +596,7 @@ void dumpSniffs(const SharedMemory & mem) {
     for (auto & record : mem.sniffs) {
         record.value.updateStringValue();
         i++;
-        std::cout << "\t SniffRecord(sniff_file='" << record.pname << "', pid=" << record.pid << ", location=";
+        std::cout << "\t SniffRecord (id=" << i << ", pid=" << record.pid << ", location=";
         std::cout << "0x" << std::setw(16) << std::setfill('0') << std::hex << record.location << std::dec;
         std::cout << ", type=" << win_api::getSniffTypeStrForType(record.type) << ", value=" << record.value.asString();
 
@@ -729,22 +729,32 @@ int main(int argc, char * argv[]) {
                 break;
             }
 
-            if (args.at("action") == "sniff") {
+            if (args.at("action") == "sniff" && !sniffs.empty()) {
+                sniffs_eliminated = sniffs;
                 sniffs.clear();
             }
 
-            if (args.at("action") == "undo" && !sniffs_eliminated.empty()) {
-                std::cout << "Returned " << sniffs_eliminated.size() << " into the working sniff set" << std::endl;
-                for (auto & record : sniffs_eliminated) {
-                    sniffs.push_back(record);
+            if (args.at("action") == "undo") {
+                if (sniffs_eliminated.empty()) {
+                    std::cout << "No history of sniffs to undo" << std::endl;
                 }
-                sniffs_eliminated.clear();
+                else {
+                    std::cout << "Returned " << sniffs_eliminated.size() << " records into the working sniff set" << std::endl;
+                    for (auto & record : sniffs_eliminated) {
+                        sniffs.push_back(record);
+                    }
+                    sniffs_eliminated.clear();
+                }
             }
 
             if (args.at("action") == "clear" && !sniffs.empty()) {
                 std::cout << "Clearing all " << sniffs.size() << " sniff records" << std::endl;
                 sniffs_eliminated = sniffs;
                 sniffs.clear();
+            }
+
+            if (args.at("action") == "sniff") {
+                std::cout << "Searching attached process for " << args.at("find") << " ..." << std::endl;
             }
         }
 
@@ -808,8 +818,11 @@ int main(int argc, char * argv[]) {
             std::cout << "Updated sniffs with existing values in the process(s)" << std::endl;
             dumpSniffs(mem);
         }
-        else if (args.at("action") == "clear" || args.at("action") == "undo") {
+        else if (args.at("action") == "undo") {
             dumpSniffs(mem);
+        }
+        else if (args.at("action") == "clear") {
+            // NO-OP
         }
         else {
             std::cout << "Unknown command \"" << args.at("action") << "\"" << std::endl;
@@ -820,7 +833,7 @@ int main(int argc, char * argv[]) {
         writeSniffsToSniffFile(sniff_file_name, sniffs);
     }
     else {
-        std::cout << "Persisted old sniff file" << std::endl;
+        std::cout << "Persisted old sniff file since the new working set was empty" << std::endl;
     }
 
     return 0;
