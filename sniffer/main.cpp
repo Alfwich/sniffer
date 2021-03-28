@@ -307,7 +307,7 @@ bool resniff_cmp_f(std::string & pred, double_t a, double_t b) {
 
 void do_resniffs(int id, SharedMemory * sm) {
     auto is_update_resniff = sm->args.at("action") == "update";
-    auto resniff_pred_str = sm->args.at("spred");
+    auto resniff_pred_str = sm->args.count("spred") > 0 ? sm->args.at("spred") : "";
     auto resniff_type_pred_str = sm->args.count("stype") > 0 ? sm->args.at("stype") : "";
     auto resniff_type_pred = win_api::getSniffTypeForStr(resniff_type_pred_str);
     auto resniff_value_pred_str = sm->args.count("find") > 0 ? sm->args.at("find") : "";
@@ -566,7 +566,8 @@ uint32_t getNumThreads(std::unordered_map<std::string, std::string> & args) {
     return max(arg_threads, 1);
 }
 
-size_t processResniffsIfNeeded(SharedMemory & mem) {
+std::vector<win_api::SniffRecord> processResniffsIfNeeded(SharedMemory & mem) {
+    std::vector<win_api::SniffRecord> result;
     std::set<size_t> sniffs_to_exclude;
     for (const auto & resniff : mem.thread_resniffs) {
         for (const auto index_to_exclude : resniff) {
@@ -582,14 +583,16 @@ size_t processResniffsIfNeeded(SharedMemory & mem) {
         }
     }
 
+    if (!sniffs_to_exclude.empty()) {
+        result = mem.sniffs;
+    }
     mem.sniffs = new_records;
 
-    return sniffs_to_exclude.size();
+    return result;
 }
 
 void dumpSniffs(const SharedMemory & mem) {
     auto i = 0;
-    std::cout << "Sniff records:" << std::endl;
     for (auto & record : mem.sniffs) {
         record.value.updateStringValue();
         i++;
@@ -666,7 +669,7 @@ void parseArgStringIntoArgsMap(const std::string args_string, std::unordered_map
     }
 }
 
-static const char * help_text = "[sniff|resniff|replace|update|interactive|list] -pname \"process_name\" -spred [gt|lt|eq|ne] -stype [i8|i32|i64|u8|u32|u64|f32|f64|str] -find \"value_to_sniff_or_resniff_on\" -set \"value_to_set\" -j [num threads to use] -sf \"out_file_name\"";
+static const char * help_text = "[sniff|resniff|replace|update|interactive|list|undo|clear] -pname \"process_name\" -spred [gt|lt|eq|ne] -stype [i8|i32|i64|u8|u32|u64|f32|f64|str] -find \"value_to_sniff_or_resniff_on\" -set \"value_to_set\" -j [num threads to use] -sf \"out_file_name\"";
 
 bool updateArgsForInteractiveMode(std::unordered_map<std::string, std::string> & args) {
     std::cout << "sniffer > ";
@@ -696,6 +699,7 @@ int main(int argc, char * argv[]) {
     }
 
     win_api::setDebugPriv();
+    auto sniffs_eliminated = std::vector<win_api::SniffRecord>();
     const auto executable_to_consider = args["pname"];
     const auto executable_to_consider_wstring = std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes(executable_to_consider);
     const auto pids_to_consider = win_api::getPIDSForProcessName(executable_to_consider_wstring);
@@ -724,7 +728,22 @@ int main(int argc, char * argv[]) {
             if (args.size() == 0) {
                 break;
             }
+
             if (args.at("action") == "sniff") {
+                sniffs.clear();
+            }
+
+            if (args.at("action") == "undo" && !sniffs_eliminated.empty()) {
+                std::cout << "Returned " << sniffs_eliminated.size() << " into the working sniff set" << std::endl;
+                for (auto & record : sniffs_eliminated) {
+                    sniffs.push_back(record);
+                }
+                sniffs_eliminated.clear();
+            }
+
+            if (args.at("action") == "clear" && !sniffs.empty()) {
+                std::cout << "Clearing all " << sniffs.size() << " sniff records" << std::endl;
+                sniffs_eliminated = sniffs;
                 sniffs.clear();
             }
         }
@@ -756,7 +775,10 @@ int main(int argc, char * argv[]) {
 
         size_t total_bytes_considered = 0;
         size_t total_replacements = 0;
-        size_t total_sniffs_eliminated = processResniffsIfNeeded(mem);
+        auto new_eliminated_sniffs = processResniffsIfNeeded(mem);
+        if (!new_eliminated_sniffs.empty()) {
+            sniffs_eliminated = new_eliminated_sniffs;
+        }
 
         for (uint32_t i = 0; i < num_threads; ++i) {
             total_bytes_considered += mem.thread_bytes[i];
@@ -775,18 +797,23 @@ int main(int argc, char * argv[]) {
             dumpSniffs(mem);
         }
         else if (args.at("action") == "resniff") {
-            std::cout << "Filtered " << total_sniffs_eliminated << " records which ! " << getMapValueOrDefault(args, "spred") << " " << (mem.args.count("find") == 0 ? "the original value" : mem.args.at("find")) << ". Remaining records: " << std::endl;
+            std::cout << "Filtered " << new_eliminated_sniffs.size() << " records which ! " << getMapValueOrDefault(args, "spred") << " " << (mem.args.count("find") == 0 ? "the original value" : mem.args.at("find")) << ". Remaining records: " << std::endl;
             dumpSniffs(mem);
         }
-        else if (args.at("action") == "update") {
-            dumpSniffs(mem);
-        }
-
         else if (args.at("action") == "list") {
             std::cout << "Working with " << mem.sniffs.size() << " sniffs:" << std::endl;
             dumpSniffs(mem);
         }
-
+        else if (args.at("action") == "update") {
+            std::cout << "Updated sniffs with existing values in the process(s)" << std::endl;
+            dumpSniffs(mem);
+        }
+        else if (args.at("action") == "clear" || args.at("action") == "undo") {
+            dumpSniffs(mem);
+        }
+        else {
+            std::cout << "Unknown command \"" << args.at("action") << "\"" << std::endl;
+        }
     } while (is_interactive);
 
     if (!sniffs.empty()) {
