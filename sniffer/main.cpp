@@ -666,7 +666,7 @@ SnifferArgs updateArgsForInteractiveMode(std::string & current_context, size_t n
     std::getline(std::cin, line);
     trim(line);
     if (line.empty() || line == "help" || line == "?") {
-        std::cout << "\t Help: " << HELP_TEXT << std::endl;
+        std::cout << INTERACTIVE_HELP_TEXT << std::endl;
     }
 
     return parseArgStringIntoArgsMap(line);
@@ -911,7 +911,7 @@ int main(int argc, char * argv[]) {
                 threads.push_back(std::thread(action, i, &mem));
             }
 
-            auto max_jobs = args.at("action") == "sniff" ? records.size() : sniffs->size();
+            auto max_jobs = (args.at("action") == "sniff" || args.at("action") == "find") ? records.size() : sniffs->size();
 
             while (mem.getCurrentJobIndex() < max_jobs + 1) {
                 std::cout << "\r\t Starting " << args.at("action") << " job " << mem.getCurrentJobIndex() << " / " << max_jobs << " ... ";
