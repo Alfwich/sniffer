@@ -609,8 +609,10 @@ void dumpSniffs(const SharedMemory & mem, uint32_t offset = 0) {
         }
         std::cout << ")" << std::endl;
 
-        if (i - offset == 20) {
-            std::cout << "\t ... [" << mem.sniffs->size() - i - 20 << " more records] ..." << std::endl;
+        if (i - offset == 20) { 
+            if ((mem.sniffs->size() - i) != 0) {
+                std::cout << "\t ... [" << mem.sniffs->size() - i  << " more records] ..." << std::endl;
+            }
             break;
         }
     }
@@ -619,9 +621,11 @@ void dumpSniffs(const SharedMemory & mem, uint32_t offset = 0) {
 std::vector<std::string> splitArgStringIntoWords(const std::string args_string) {
     std::vector<std::string> result;
     std::string word;
+    bool in_quote = false;
 
     for (auto i = 0; i < args_string.size(); ++i) {
-        if (args_string[i] == ' ') {
+        if (args_string[i] == '"') in_quote = !in_quote;
+        if (args_string[i] == ' ' && !in_quote) {
             if (!word.empty()) {
                 if (word[0] == '-') {
                     word.erase(word.begin());
@@ -631,7 +635,9 @@ std::vector<std::string> splitArgStringIntoWords(const std::string args_string) 
             word = "";
         }
         else {
-            word.push_back(args_string[i]);
+            if (args_string[i] != '"') {
+                word.push_back(args_string[i]);
+            }
         }
     }
 
@@ -797,6 +803,10 @@ int main(int argc, char * argv[]) {
             }
 
             if (args.at("action") == "context") {
+                // RM hack
+                if (args.count("rm") > 0) {
+                    args["remove"] = args.at("rm");
+                }
                 if (args.count("set") > 0) {
                     std::cout << "Switching context to " << args.at("set") << std::endl;
                     if (sniff_context_to_sniffs.count(args.at("set")) == 0) {
@@ -805,7 +815,7 @@ int main(int argc, char * argv[]) {
                     sniffs = &sniff_context_to_sniffs.at(args.at("set"));
                     current_sniff_context = args.at("set");
                 }
-                else if (args.count("list") > 0) {
+                else if (args.count("list") > 0 || args.count("ls") > 0) {
                     std::cout << "Registered Contexts:" << std::endl;
                     for (const auto & context_to_sniffs : sniff_context_to_sniffs) {
                         if (context_to_sniffs.first == current_sniff_context) {
@@ -816,17 +826,17 @@ int main(int argc, char * argv[]) {
                         }
                     }
                 }
-                else if (args.count("delete") > 0 && !args.at("delete").empty()) {
-                    if (sniff_context_to_sniffs.count(args.at("delete")) == 0) {
-                        std::cout << "Context " << args.at("delete") << " cannot be deleted because it does not exist" << std::endl;
+                else if (args.count("remove") > 0 && !args.at("remove").empty()) {
+                    if (sniff_context_to_sniffs.count(args.at("remove")) == 0) {
+                        std::cout << "Context " << args.at("remove") << " cannot be removed because it does not exist" << std::endl;
                     }
-                    else if (args.at("delete") == SNIFF_GLOBAL_CONTEXT) {
+                    else if (args.at("remove") == SNIFF_GLOBAL_CONTEXT) {
                         std::cout << "Cannot delete global context" << std::endl;
                     }
                     else {
-                        std::cout << "Deleting sniff context " << args.at("delete") << std::endl;
-                        sniff_context_to_sniffs.erase(args.at("delete"));
-                        if (current_sniff_context == args.at("delete")) {
+                        std::cout << "Removing sniff context " << args.at("remove") << std::endl;
+                        sniff_context_to_sniffs.erase(args.at("remove"));
+                        if (current_sniff_context == args.at("remove")) {
                             current_sniff_context = SNIFF_GLOBAL_CONTEXT;
                             sniffs = &sniff_context_to_sniffs.at(current_sniff_context);
                         }
@@ -840,6 +850,7 @@ int main(int argc, char * argv[]) {
                         std::cout << "Cloning current context to new context " << args.at("clone") << std::endl;
                         sniff_context_to_sniffs[args.at("clone")] = sniff_context_to_sniffs.at(current_sniff_context);
                         current_sniff_context = args.at("clone");
+                        sniffs = &sniff_context_to_sniffs.at(current_sniff_context);
                     }
                 }
             }
@@ -877,7 +888,7 @@ int main(int argc, char * argv[]) {
                         size_t i = 1;
                         for (auto & record_to_value : repeat_replace) {
                             record_to_value.second.updateStringValue();
-                            std::cout << "\t RepeatReplace (id=" << i << ", type=" << win_api::getSniffTypeStrForType(record_to_value.first.type) << ", location=" << std::setw(16) << std::hex << record_to_value.first.location << std::dec << ", value_to_set=" << record_to_value.second.asString() << ")" << std::endl;
+                            std::cout << "\t RepeatReplace (id=" << (i++) << ", type=" << win_api::getSniffTypeStrForType(record_to_value.first.type) << ", location=" << std::setw(16) << std::hex << record_to_value.first.location << std::dec << ", value_to_set=" << record_to_value.second.asString() << ")" << std::endl;
                         }
                     }
                 }
