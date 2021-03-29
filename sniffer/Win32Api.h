@@ -6,8 +6,8 @@
 #include <codecvt>
 #include <locale>
 #include <set>
-
 #include <vector>
+#include <unordered_map>
 
 namespace win_api {
 
@@ -305,10 +305,9 @@ namespace win_api {
 
     class SniffRecord {
     public:
-        SniffRecord() : pid(0), pname(""), location(0), type(SniffType::unknown) {};
-        SniffRecord(uint64_t pid, const char * pname, uint64_t location, SniffType type) : pid(pid), pname(pname), location(location), type(type) {};
+        SniffRecord() : pid(0), location(0), type(SniffType::unknown) {};
+        SniffRecord(uint64_t pid, uint64_t location, SniffType type) : pid(pid), location(location), type(type) {};
         uint64_t pid;
-        std::string pname;
         uint64_t location;
         SniffType type;
         SniffValue value;
@@ -327,7 +326,7 @@ namespace win_api {
     void setByteAtLocationForPidAndLocation(uint64_t pid, uint64_t location, char byte_to_set);
     const char * getSniffTypeStrForType(SniffType type);
     SniffRecord getSniffRecordFromLine(const std::string & str);
-    std::vector<SniffRecord> getSniffsForProcess(const std::string & exec_name);
-    void writeSniffsToSniffFile(const std::string & exec_name, std::vector<SniffRecord> & sniff_records);
+    std::unordered_map<std::string, std::vector<win_api::SniffRecord>> getSniffsForProcess(const std::string & exec_name);
+    void writeSniffsToSniffFile(const std::string & exec_name, std::vector<SniffRecord> & sniff_records, std::ofstream & sniff_file);
     SniffType getSniffTypeForStr(const std::string & type_str);
 }
