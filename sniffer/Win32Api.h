@@ -112,6 +112,15 @@ namespace win_api {
                     catch (...) {
                         fp_value = 0.0;
                     }
+
+                    if (int_value == 1 && str_value != "1") {
+                        int_value = 0;
+                    }
+
+                    if (uint_value == 1 && str_value != "1") {
+                        uint_value = 0;
+                    }
+                    break;
                 }
 
                 primed = true;

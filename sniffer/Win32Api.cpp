@@ -320,31 +320,31 @@ namespace win_api {
                 sniff_file << record.pid << SNIFF_FILE_DELIM << record.location << SNIFF_FILE_DELIM << getSniffTypeStrForType(record.type);
                 switch (record.type) {
                 case SniffType::i8:
-                    sniff_file << SNIFF_FILE_DELIM << record.value.asI8() << std::endl;
+                    sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asI8() << std::endl;
                     break;
                 case SniffType::i32:
-                    sniff_file << SNIFF_FILE_DELIM << record.value.asI32() << std::endl;
+                    sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asI32() << std::endl;
                     break;
                 case SniffType::i64:
-                    sniff_file << SNIFF_FILE_DELIM << record.value.asI64() << std::endl;
+                    sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asI64() << std::endl;
                     break;
                 case SniffType::u8:
-                    sniff_file << SNIFF_FILE_DELIM << record.value.asU8() << std::endl;
+                    sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asU8() << std::endl;
                     break;
                 case SniffType::u32:
-                    sniff_file << SNIFF_FILE_DELIM << record.value.asU32() << std::endl;
+                    sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asU32() << std::endl;
                     break;
                 case SniffType::u64:
-                    sniff_file << SNIFF_FILE_DELIM << record.value.asU64() << std::endl;
+                    sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asU64() << std::endl;
                     break;
                 case SniffType::f32:
-                    sniff_file << SNIFF_FILE_DELIM << record.value.asF32() << std::endl;
+                    sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asF32() << std::endl;
                     break;
                 case SniffType::f64:
-                    sniff_file << SNIFF_FILE_DELIM << record.value.asF64() << std::endl;
+                    sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asF64() << std::endl;
                     break;
                 case SniffType::str:
-                    sniff_file << SNIFF_FILE_DELIM << record.value.asString() << std::endl;
+                    sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asString() << std::endl;
                     break;
                 default:
                     sniff_file << SNIFF_FILE_DELIM << std::endl;
