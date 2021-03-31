@@ -193,7 +193,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 	auto sniff_pred_str = sm->args.at("spred", "eq");
 	auto sniff_type_pred_str = sm->args.count("stype") > 0 ? sm->args.at("stype") : "";
 	auto sniff_type_pred = win_api::getSniffTypeForStr(sniff_type_pred_str);
-	const auto value_string_to_find = sm->args.at("find").empty() ? sm->args.getArgAtIndex(1) : sm->args.at("find");
+	const auto value_string_to_find = sm->args.at("ctx_param").empty() ? sm->args.getArgAtIndex(1) : sm->args.at("ctx_param");
 	auto value_to_find = win_api::SniffValue(value_string_to_find.c_str());
 	win_api::SniffRecord record;
 	bool match = false;
@@ -318,10 +318,10 @@ void do_sniffs(int id, SharedMemory * sm) {
 
 void do_resniffs(int id, SharedMemory * sm) {
 	auto is_update_resniff = sm->args.at("action") == "update";
-	auto resniff_pred_str = sm->args.count("spred") > 0 ? sm->args.at("spred") : "eq";
-	auto resniff_type_pred_str = sm->args.count("stype") > 0 ? sm->args.at("stype") : "";
+	auto resniff_pred_str = sm->args.at("spred", "eq");
+	auto resniff_type_pred_str = sm->args.at("stype");
 	auto resniff_type_pred = win_api::getSniffTypeForStr(resniff_type_pred_str);
-	auto resniff_value_pred_str = sm->args.count("find") > 0 ? sm->args.at("find") : "";
+	auto resniff_value_pred_str = sm->args.at("ctx_param");
 	auto resniff_value_pred = win_api::SniffValue(resniff_value_pred_str.c_str());
 	for (size_t job_id = sm->getNextJob(); job_id < sm->sniffs->size(); job_id = sm->getNextJob()) {
 		auto & sniff = sm->sniffs->at(job_id);
@@ -501,9 +501,9 @@ SnifferArgs getArguments(int argc, char * argv[]) {
 
 std::vector<void (*)(int, SharedMemory *)> getActionsForArgsAndSharedMem(const SnifferArgs & args, const SharedMemory & mem) {
 	auto result = std::vector<void (*)(int, SharedMemory *)>();
-	if (args.at("action") == "sniff" || args.at("action") == "find") {
-		if (args.count("find") == 0 && args.getArgAtIndex(1).empty()) {
-			std::cout << "Expected -find to be provided when doing a sniff operation" << std::endl;
+	if (args.at("action") == "find") {
+		if (args.count("ctx_param") == 0 && args.getArgAtIndex(1).empty()) {
+			std::cout << "Expected token after find (ie 'find 450') to be provided when doing a find operation" << std::endl;
 			result.clear();
 			return result;
 		}
@@ -511,28 +511,23 @@ std::vector<void (*)(int, SharedMemory *)> getActionsForArgsAndSharedMem(const S
 		result.push_back(do_sniffs);
 	}
 	else if (args.at("action") == "replace") {
-		if (mem.sniffs->empty()) {
-			if (args.count("find") == 0) {
-				std::cout << "Expected -find to be provided when doing a replace operation without sniff file" << std::endl;
-				result.clear();
-				return result;
-			}
-
-			std::cout << "No sniff records located - doing sniff before replace" << std::endl;
-			result.push_back(do_sniffs);
-		}
-
 		if (args.count("set") == 0) {
 			std::cout << "Expected -set to be provided when using action replace" << std::endl;
 			result.clear();
 			return result;
 		}
 
+		if (mem.sniffs->empty()) {
+			std::cout << "Have no sniffs to replace - run find to find some memory locations" << std::endl;
+			result.clear();
+			return result;
+		}
+
 		result.push_back(do_replaces);
 	}
-	else if (args.at("action") == "resniff" || args.at("action") == "update") {
+	else if (args.at("action") == "filter" || args.at("action") == "update") {
 		if (mem.sniffs->size() == 0) {
-			std::cout << "Expected to find cached sniffs when using action resniff/update - run sniff to generate a starting sniff file" << std::endl;
+			std::cout << "Expected to find cached sniffs when using action resniff/update - run 'find' to generate a starting sniff file" << std::endl;
 			result.clear();
 			return result;
 		}
@@ -583,7 +578,7 @@ void dumpSniffs(const SharedMemory & mem, uint32_t offset = 0) {
 
 		record.value.updateStringValue();
 
-		std::cout << "\t SniffRecord (id=" << i << ", pid=" << record.pid << ", location=";
+		std::cout << "\t SniffRecord (id=" << i - 1 << ", pid=" << record.pid << ", location=";
 		std::cout << "0x" << std::setw(16) << std::setfill('0') << std::hex << record.location << std::dec;
 		std::cout << ", type=" << win_api::getSniffTypeStrForType(record.type) << ", value=" << record.value.asString();
 
@@ -658,6 +653,10 @@ SnifferArgs parseArgStringIntoArgsMap(const std::string args_string) {
 		args["action"] = words[0];
 	}
 
+	if (words.size() > 1) {
+		args["ctx_param"] = words[1];
+	}
+
 	for (size_t i = 1; (i + 1) < words.size(); i += 2) {
 		args[words[i]] = words[i + 1];
 	}
@@ -698,6 +697,44 @@ void replace_thread_proc() {
 	}
 }
 
+class IndexRange {
+public:
+	IndexRange(uint64_t min_index, uint64_t max_index, bool is_good, bool is_multiple) : min_index(min_index), max_index(max_index), is_good(is_good), is_multiple(is_multiple) {};
+	const bool is_good = true;
+	const bool is_multiple = false;
+	const uint64_t min_index = 0;
+	const uint64_t max_index = 0;
+};
+
+IndexRange getIndexRangeFromArgument(const std::string & arg) {
+	uint64_t min = 0;
+	uint64_t max = 0;
+	bool is_good = true;
+	bool is_multiple = false;
+
+	try {
+		if (arg.find(':') == std::string::npos) {
+			min = std::stoull(arg);
+			max = min;
+		}
+		else {
+			auto col_pos = arg.find(':');
+			min = std::stoull(arg.substr(0, col_pos));
+			max = std::stoull(arg.substr(col_pos + 1));
+			is_good = min <= max;
+			is_multiple = min != max;
+		}
+	}
+	catch (...) {
+		min = 0;
+		max = 0;
+		is_good = false;
+		is_multiple = false;
+	}
+
+	return IndexRange(min, max, is_good, is_multiple);
+}
+
 int main(int argc, char * argv[]) {
 	auto args = getArguments(argc, argv);
 
@@ -723,7 +760,7 @@ int main(int argc, char * argv[]) {
 		auto _tmp = sniff_context_to_sniffs[current_sniff_context];
 	}
 	std::vector<win_api::SniffRecord> * sniffs = &sniff_context_to_sniffs.at(current_sniff_context);
-	if (args.at("action") == "sniff") sniffs->clear();
+	if (args.at("action") == "find") sniffs->clear();
 	const auto is_interactive = args.at("action") == "interactive";
 
 	std::vector<win_api::MemoryRegionRecord> records;
@@ -762,16 +799,8 @@ int main(int argc, char * argv[]) {
 				sniffs->clear();
 			}
 
-			if (args.at("action") == "context") {
-				if (args.count("set") > 0) {
-					std::cout << "Switching context to " << args.at("set") << std::endl;
-					if (sniff_context_to_sniffs.count(args.at("set")) == 0) {
-						auto _tmp = sniff_context_to_sniffs[args.at("set")];
-					}
-					sniffs = &sniff_context_to_sniffs.at(args.at("set"));
-					current_sniff_context = args.at("set");
-				}
-				else if (args.count("list") > 0 || args.count("ls") > 0 || args.getArgAtIndex(1) == "list" || args.getArgAtIndex(1) == "ls" || args.size() == 1) {
+			if (args.at("action") == "context" || args.at("action") == "ctx") {
+				if (args.at("ctx_param") == "list" || args.at("ctx_param") == "ls" || args.size() == 1) {
 					std::cout << "Registered Contexts:" << std::endl;
 					for (const auto & context_to_sniffs : sniff_context_to_sniffs) {
 						if (context_to_sniffs.first == current_sniff_context) {
@@ -782,8 +811,8 @@ int main(int argc, char * argv[]) {
 						}
 					}
 				}
-				else if (args.count({ "remove", "rm" }) > 0) {
-					const auto context_to_remove = args.at({ "remove", "rm" });
+				else if (args.at("ctx_param") == "rm" || args.at("ctx_param") == "remove") {
+					const auto context_to_remove = args.at("id", args.getArgAtIndex(2).c_str());
 					if (sniff_context_to_sniffs.count(context_to_remove) == 0) {
 						std::cout << "Context " << args.at("remove") << " cannot be removed because it does not exist" << std::endl;
 					}
@@ -799,8 +828,8 @@ int main(int argc, char * argv[]) {
 						}
 					}
 				}
-				else if (!args.at("clone").empty()) {
-					const auto context_to_clone_into = args.at("clone");
+				else if (args.at("ctx_param") == "clone") {
+					const auto context_to_clone_into = args.at("id", args.getArgAtIndex(2).c_str());
 					if (sniff_context_to_sniffs.count(context_to_clone_into) != 0) {
 						std::cout << "Cannot clone to new context " << context_to_clone_into << " as it already exists" << std::endl;
 					}
@@ -811,18 +840,23 @@ int main(int argc, char * argv[]) {
 						sniffs = &sniff_context_to_sniffs.at(current_sniff_context);
 					}
 				}
+				else {
+					std::cout << "Switching context to " << args.at("ctx_param") << std::endl;
+					if (sniff_context_to_sniffs.count(args.at("ctx_param")) == 0) {
+						auto _tmp = sniff_context_to_sniffs[args.at("ctx_param")];
+					}
+					sniffs = &sniff_context_to_sniffs.at(args.at("ctx_param"));
+					current_sniff_context = args.at("ctx_param");
+				}
 			}
 
-
-			if (args.at("action") == "sniff" || args.at("action") == "find") {
+			if (args.at("action") == "find") {
 				if (!sniffs->empty()) {
 					sniffs_eliminated[current_sniff_context] = *sniffs;
 					sniffs->clear();
 				}
 
-				const auto token_to_search_for = args.at("find").empty()
-					? args.getArgAtIndex(1)
-					: args.at("find");
+				const auto token_to_search_for = args.at("ctx_param");
 
 				if (token_to_search_for.empty()) {
 					std::cout << "\texpect find <token>" << std::endl;
@@ -834,18 +868,29 @@ int main(int argc, char * argv[]) {
 
 			if (args.at("action") == "remove" || args.at("action") == "rm") {
 				try {
-					const auto id_to_remove_string = args.at("id").empty()
-						? args.getArgAtIndex(1)
-						: args.at("id");
-					if (!id_to_remove_string.empty()) {
-						size_t id_to_remove = std::stoul(id_to_remove_string.c_str()) - 1;
-						if (id_to_remove >= 0 && id_to_remove < sniffs->size()) {
-							std::cout << "\tErasing record with id " << (id_to_remove + 1) << std::endl;
-							auto record = sniffs->at(id_to_remove);
-							sniffs->erase(sniffs->begin() + id_to_remove);
-							sniffs_eliminated[current_sniff_context].clear();
-							sniffs_eliminated[current_sniff_context].push_back(record);
+					const auto ids = getIndexRangeFromArgument(args.at("ctx_param"));
+					if (ids.is_multiple) {
+						std::cout << "\tErasing records " << ids.min_index << ":" << (ids.max_index >= sniffs->size() ? sniffs->size() : ids.max_index) << std::endl;
+					}
+					else {
+						std::cout << "\tErasing record " << ids.min_index << std::endl;
+					}
+					if (ids.is_good && ids.min_index < sniffs->size()) {
+						sniffs_eliminated[current_sniff_context].clear();
+						if (ids.is_multiple) {
+							auto max_index = ids.max_index >= sniffs->size() ? sniffs->size() : ids.max_index + 1;
+							for (size_t i = ids.min_index; i < max_index; ++i) {
+								sniffs_eliminated[current_sniff_context].push_back(sniffs->at(i));
+							}
+							sniffs->erase(sniffs->begin() + ids.min_index, sniffs->begin() + max_index);
 						}
+						else {
+							sniffs_eliminated[current_sniff_context].push_back(sniffs->at(ids.min_index));
+							sniffs->erase(sniffs->begin() + ids.min_index);
+						}
+					}
+					else {
+						std::cout << "Could not erase indexs that do not exist" << std::endl;
 					}
 				}
 				catch (...) {
@@ -854,7 +899,7 @@ int main(int argc, char * argv[]) {
 			}
 
 			if (args.at("action") == "repeat") {
-				if (args.count("list") > 0 || args.getArgAtIndex(1) == "list") {
+				if (args.at("ctx_param") == "list" || args.size() == 1) {
 					std::cout << "Current replace repeats" << std::endl;
 					{
 						std::lock_guard<std::mutex> lock(replace_thread_mutex);
@@ -865,9 +910,32 @@ int main(int argc, char * argv[]) {
 						}
 					}
 				}
-				else if (args.count("set") > 0) {
+				else if (args.at("ctx_param") == "remove" || args.at("ctx_param") == "rm") {
+					try {
+						std::lock_guard<std::mutex> lock(replace_thread_mutex);
+						const auto ids = getIndexRangeFromArgument(args.at("id", args.getArgAtIndex(2).c_str()));
+						if (ids.is_good && ids.min_index < repeat_replace.size() && ids.max_index < repeat_replace.size()) {
+							if (ids.is_multiple) {
+								auto max_index = ids.max_index == repeat_replace.size() ? ids.max_index : ids.max_index + 1;
+								repeat_replace.erase(repeat_replace.begin() + ids.min_index, repeat_replace.begin() + max_index);
+							}
+							else {
+								repeat_replace.erase(repeat_replace.begin() + ids.min_index);
+							}
+						}
+					}
+					catch (...) {
+						// NO OP
+					}
+				}
+				else if (args.at("ctx_param") == "clear") {
+					std::cout << "Clearing repeat replaces" << std::endl;
+					std::lock_guard<std::mutex> lock(replace_thread_mutex);
+					repeat_replace.clear();
+				}
+				else {
 					std::cout << "Setting repeat replaces" << std::endl;
-					auto value_to_set = win_api::SniffValue(args.at("set").c_str());
+					auto value_to_set = win_api::SniffValue(args.at("ctx_param").c_str());
 					if (!value_to_set.asString().empty()) {
 						if (args.count("id") > 0) {
 							try {
@@ -890,23 +958,7 @@ int main(int argc, char * argv[]) {
 						}
 					}
 				}
-				else if (args.count("remove") > 0) {
-					try {
-						std::lock_guard<std::mutex> lock(replace_thread_mutex);
-						const auto id = std::stoul(args.at("remove"));
-						if (id > 0 && id - 1 < repeat_replace.size()) {
-							repeat_replace.erase(repeat_replace.begin() + (id - 1));
-						}
-					}
-					catch (...) {
-						// NO OP
-					}
-				}
-				else if (args.getArgAtIndex(1) == "clear") {
-					std::cout << "Clearing repeat replaces" << std::endl;
-					std::lock_guard<std::mutex> lock(replace_thread_mutex);
-					repeat_replace.clear();
-				}
+
 			}
 
 		}
@@ -921,7 +973,7 @@ int main(int argc, char * argv[]) {
 				threads.push_back(std::thread(action, i, &mem));
 			}
 
-			auto max_jobs = (args.at("action") == "sniff" || args.at("action") == "find") ? records.size() : sniffs->size();
+			auto max_jobs = args.at("action") == "find" ? records.size() : sniffs->size();
 
 			while (mem.getCurrentJobIndex() < max_jobs + 1) {
 				std::cout << "\r\t Starting " << args.at("action") << " job " << mem.getCurrentJobIndex() << " / " << max_jobs << " ... ";
@@ -951,12 +1003,12 @@ int main(int argc, char * argv[]) {
 				" across " << pids_to_consider.size() << " processes and " << mem.records.size() << " mem regions for " << executable_to_consider << std::endl;
 			dumpSniffs(mem);
 		}
-		else if (args.at("action") == "sniff" || args.at("action") == "find") {
+		else if (args.at("action") == "find") {
 			std::cout << "Found " << mem.sniffs->size() << " records: " << std::endl;
 			dumpSniffs(mem);
 		}
-		else if (args.at("action") == "resniff") {
-			std::cout << "Filtered " << new_eliminated_sniffs.size() << " records which ! " << args.at("spred", "eq") << " " << args.at("find", "the original value") << ". Remaining records: " << std::endl;
+		else if (args.at("action") == "filter") {
+			std::cout << "Filtered " << new_eliminated_sniffs.size() << " records which ! " << args.at("spred", "eq") << " " << args.at("ctx_param", "the original value") << ". Remaining records: " << std::endl;
 			dumpSniffs(mem);
 		}
 		else if (args.at("action") == "list" || args.at("action") == "ls") {
