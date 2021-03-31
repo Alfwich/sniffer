@@ -20,31 +20,34 @@
 class SharedMemory {
 	size_t current_job = 0;
 	std::mutex lock;
+	std::mutex add_record_lock;
 	uint32_t num_threads;
 public:
 	SharedMemory(const SnifferArgs & args, std::vector<win_api::SniffRecord> * sniffs, std::vector<win_api::MemoryRegionRecord> & records, uint32_t num_threads) : args(args), sniffs(sniffs), records(records), num_threads(num_threads) {
-		thread_edits.resize(num_threads);
-		thread_bytes.resize(num_threads);
-		thread_sniffs.resize(num_threads);
 		thread_resniffs.resize(num_threads);
 	}
 
-	std::vector<size_t> thread_edits;
-	std::vector<size_t> thread_bytes;
-	std::vector<std::vector<win_api::SniffRecord>> thread_sniffs;
 	std::vector<std::set<size_t>> thread_resniffs;
 	void resetMultiThreadState() {
 		std::lock_guard<std::mutex> stack_lock(lock);
 		current_job = 0;
 	}
+
 	size_t getNextJob() {
 		std::lock_guard<std::mutex> stack_lock(lock);
 		return current_job++;
 	}
+
 	size_t getCurrentJobIndex() {
 		std::lock_guard<std::mutex> stack_lock(lock);
 		return current_job;
 	}
+
+	void addSniffRecord(win_api::SniffRecord & record) {
+		std::lock_guard<std::mutex> stack_lock(add_record_lock);
+		sniffs->emplace_back(record);
+	}
+
 	std::vector<win_api::MemoryRegionRecord> & records;
 	std::vector<win_api::SniffRecord> * sniffs;
 	const SnifferArgs & args;
@@ -178,7 +181,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::str;
 					record.value.setValue(value_to_find.asString());
-					sm->thread_sniffs[id].push_back(record);
+					sm->addSniffRecord(record);
 				}
 			}
 
@@ -188,7 +191,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::u8;
 					record.value.setValue(*non_str_bytes);
-					sm->thread_sniffs[id].push_back(record);
+					sm->addSniffRecord(record);
 				}
 			}
 
@@ -199,7 +202,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::u32;
 					record.value.setValue(val);
-					sm->thread_sniffs[id].push_back(record);
+					sm->addSniffRecord(record);
 				}
 			}
 
@@ -210,7 +213,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::u64;
 					record.value.setValue(val);
-					sm->thread_sniffs[id].push_back(record);
+					sm->addSniffRecord(record);
 				}
 			}
 
@@ -221,7 +224,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::i8;
 					record.value.setValue(val);
-					sm->thread_sniffs[id].push_back(record);
+					sm->addSniffRecord(record);
 				}
 			}
 
@@ -232,7 +235,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::i32;
 					record.value.setValue(val);
-					sm->thread_sniffs[id].push_back(record);
+					sm->addSniffRecord(record);
 				}
 			}
 
@@ -243,7 +246,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::i64;
 					record.value.setValue(val);
-					sm->thread_sniffs[id].push_back(record);
+					sm->addSniffRecord(record);
 				}
 			}
 
@@ -254,8 +257,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::f32;
 					record.value.setValue(val);
-					sm->thread_sniffs[id].push_back(record);
-
+					sm->addSniffRecord(record);
 				}
 			}
 
@@ -266,7 +268,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::f64;
 					record.value.setValue(val);
-					sm->thread_sniffs[id].push_back(record);
+					sm->addSniffRecord(record);
 				}
 			}
 		}
@@ -927,46 +929,17 @@ int main(int argc, char * argv[]) {
 			}
 			std::cout << " done" << std::endl;
 
-			size_t total_records = 0;
-			for (uint32_t i = 0; i < num_threads; ++i) {
-				total_records += mem.thread_sniffs[i].size();
-			}
-
-			if (total_records > 0) {
-				std::chrono::milliseconds ms_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
-				uint32_t current_record = 1;
-				for (uint32_t i = 0; i < num_threads; ++i) {
-					for (auto & sniff : mem.thread_sniffs[i]) {
-						const auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch() - ms_timestamp).count();
-						if (diff > 250) {
-							ms_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
-							std::cout << "\r\t Processing new record " << (current_record++) << " / " << total_records << " ... ";
-						}
-						mem.sniffs->push_back(sniff);
-					}
-					mem.thread_sniffs[i].clear();
-				}
-				std::cout << "\r\t Processing new record " << total_records << " / " << total_records << " ... done" << std::endl;
-			}
-
 			mem.resetMultiThreadState();
 		}
 
-		size_t total_bytes_considered = 0;
-		size_t total_replacements = 0;
 		auto new_eliminated_sniffs = processResniffsIfNeeded(mem);
 		if (!new_eliminated_sniffs.empty()) {
 			sniffs_eliminated[current_sniff_context] = new_eliminated_sniffs;
 		}
 
-		for (uint32_t i = 0; i < num_threads; ++i) {
-			total_bytes_considered += mem.thread_bytes[i];
-			total_replacements += mem.thread_edits[i];
-		}
-
 		if (args.at("action") == "replace") {
 			std::cout <<
-				"Found and replaced " << total_replacements <<
+				"Found and replaced " << mem.sniffs->size() <<
 				" instances to '" << args.at("set") << "'" <<
 				" across " << pids_to_consider.size() << " processes and " << mem.records.size() << " mem regions for " << executable_to_consider << std::endl;
 			dumpSniffs(mem);
