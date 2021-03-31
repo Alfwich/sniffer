@@ -9,333 +9,354 @@
 #include <vector>
 #include <unordered_map>
 
+#include "Params.h"
+
 namespace win_api {
 
 #include "Windows.h"
 #include "tlhelp32.h"
 
-    class MemoryRegionRecord : public MEMORY_BASIC_INFORMATION {
-    public:
-        MemoryRegionRecord(DWORD pid, MEMORY_BASIC_INFORMATION & info) {
-            AssociatedPid = pid;
-            BaseAddress = info.BaseAddress;
-            AllocationBase = info.AllocationBase;
-            AllocationProtect = info.AllocationProtect;
-            RegionSize = info.RegionSize;
-            State = info.State;
-            Protect = info.Protect;
-            Type = info.Type;
-        }
-        DWORD AssociatedPid;
-    };
+	class MemoryRegionRecord : public MEMORY_BASIC_INFORMATION {
+	public:
+		MemoryRegionRecord(DWORD pid, MEMORY_BASIC_INFORMATION & info) {
+			AssociatedPid = pid;
+			BaseAddress = info.BaseAddress;
+			AllocationBase = info.AllocationBase;
+			AllocationProtect = info.AllocationProtect;
+			RegionSize = info.RegionSize;
+			State = info.State;
+			Protect = info.Protect;
+			Type = info.Type;
+		}
+		DWORD AssociatedPid;
+	};
 
-    class MemoryRegionCopy {
-    public:
-        std::vector<char> bytes;
-    };
+	class MemoryRegionCopy {
+		std::vector<uint8_t> bytes;
+		uint64_t max_loaded_mem_location = 0;
+		uint64_t pid = 0;
+		uint64_t base = 0;
+		uint64_t region_size = 0;
+		void buffer_if_needed(uint64_t addr_from_base_to_load);
+		uint64_t translate_index(uint64_t i);
+		bool has_failed_load = false;
+	public:
 
-    enum class SniffType {
-        unknown,
-        str,
-        i8,
-        i32,
-        i64,
-        u8,
-        u32,
-        u64,
-        f32,
-        f64
-    };
+		MemoryRegionCopy(win_api::DWORD pid, win_api::LPVOID location, win_api::SIZE_T size) 
+			: pid((uint64_t)pid), base((uint64_t)location), region_size((uint64_t)size) {
+			bytes.resize(RPM_CHUNK_READ_SIZE * MEM_REGION_NUM_PAGES);
+			buffer_if_needed(0);
+		}
 
-    class SniffValue {
-        std::string str_value = "";
-        std::string old_str_value = "";
-        std::int64_t int_value = 0;
-        std::uint64_t uint_value = 0;
-        std::double_t fp_value = 0.0;
-        win_api::SniffType ref_type = SniffType::unknown;
-        uint64_t ref_bytes = 999;
-        bool primed = false;
+		uint8_t & operator[](uint64_t i);
 
-        void prime() {
-            if (!primed) {
-                switch (ref_type) {
-                case SniffType::i8:
-                case SniffType::i32:
-                case SniffType::i64:
-                    str_value = std::to_string(int_value);
-                    fp_value = static_cast<double_t>(int_value);
-                    uint_value = static_cast<uint64_t>(int_value);
-                    break;
-                case SniffType::u8:
-                case SniffType::u32:
-                case SniffType::u64:
-                    str_value = std::to_string(uint_value);
-                    fp_value = static_cast<double_t>(uint_value);
-                    int_value = static_cast<int64_t>(uint_value);
-                    break;
-                case SniffType::f32:
-                case SniffType::f64:
-                    str_value = std::to_string(fp_value);
-                    int_value = static_cast<int64_t>(fp_value);
-                    uint_value = static_cast<uint64_t>(fp_value);
-                    break;
-                case SniffType::str:
-                    try {
-                        uint_value = std::stoull(str_value);
+		uint64_t size() { return region_size; }
 
-                        if (uint_value <= 0xFFu) {
-                            ref_bytes = 1;
-                        }
-                        else if (uint_value <= 0xFFFFFFFFu) {
-                            ref_bytes = 4;
-                        }
-                        else {
-                            ref_bytes = 8;
-                        }
-                    }
-                    catch (...) {
-                        uint_value = 0;
-                        ref_bytes = 999;
-                    }
+		bool is_good() { return !has_failed_load && region_size != 0 && base != 0; }
+	};
 
-                    try {
-                        int_value = std::stoll(str_value);
-                    }
-                    catch (...) {
-                        int_value = 0;
-                    }
+	enum class SniffType {
+		unknown,
+		str,
+		i8,
+		i32,
+		i64,
+		u8,
+		u32,
+		u64,
+		f32,
+		f64
+	};
 
-                    try {
-                        fp_value = std::stod(str_value);
-                    }
-                    catch (...) {
-                        fp_value = 0.0;
-                    }
+	class SniffValue {
+		std::string str_value = "";
+		std::string old_str_value = "";
+		std::int64_t int_value = 0;
+		std::uint64_t uint_value = 0;
+		std::double_t fp_value = 0.0;
+		win_api::SniffType ref_type = SniffType::unknown;
+		uint64_t ref_bytes = 999;
+		bool primed = false;
 
-                    if (int_value == 1 && str_value != "1") {
-                        int_value = 0;
-                    }
+		void prime() {
+			if (!primed) {
+				switch (ref_type) {
+				case SniffType::i8:
+				case SniffType::i32:
+				case SniffType::i64:
+					str_value = std::to_string(int_value);
+					fp_value = static_cast<double_t>(int_value);
+					uint_value = static_cast<uint64_t>(int_value);
+					break;
+				case SniffType::u8:
+				case SniffType::u32:
+				case SniffType::u64:
+					str_value = std::to_string(uint_value);
+					fp_value = static_cast<double_t>(uint_value);
+					int_value = static_cast<int64_t>(uint_value);
+					break;
+				case SniffType::f32:
+				case SniffType::f64:
+					str_value = std::to_string(fp_value);
+					int_value = static_cast<int64_t>(fp_value);
+					uint_value = static_cast<uint64_t>(fp_value);
+					break;
+				case SniffType::str:
+					try {
+						uint_value = std::stoull(str_value);
 
-                    if (uint_value == 1 && str_value != "1") {
-                        uint_value = 0;
-                    }
-                    break;
-                }
+						if (uint_value <= 0xFFu) {
+							ref_bytes = 1;
+						}
+						else if (uint_value <= 0xFFFFFFFFu) {
+							ref_bytes = 4;
+						}
+						else {
+							ref_bytes = 8;
+						}
+					}
+					catch (...) {
+						uint_value = 0;
+						ref_bytes = 999;
+					}
 
-                primed = true;
-            }
-        }
+					try {
+						int_value = std::stoll(str_value);
+					}
+					catch (...) {
+						int_value = 0;
+					}
 
-    public:
-        SniffValue() {}
-        SniffValue(const char * value) : str_value(value), ref_type(SniffType::str) {}
+					try {
+						fp_value = std::stod(str_value);
+					}
+					catch (...) {
+						fp_value = 0.0;
+					}
 
-        void updateStringValue() {
-            std::string new_value;
+					if (int_value == 1 && str_value != "1") {
+						int_value = 0;
+					}
 
-            switch (ref_type) {
-            case SniffType::i8:
-            case SniffType::i32:
-            case SniffType::i64:
-                new_value = std::to_string(int_value);
-                break;
-            case SniffType::u8:
-            case SniffType::u32:
-            case SniffType::u64:
-                new_value = std::to_string(uint_value);
-                break;
-            case SniffType::f32:
-            case SniffType::f64:
-                new_value = std::to_string(fp_value);
-                break;
-            case SniffType::str:
-                new_value = str_value;
-                break;
-            }
+					if (uint_value == 1 && str_value != "1") {
+						uint_value = 0;
+					}
+					break;
+				}
 
-            str_value = new_value;
-        }
+				primed = true;
+			}
+		}
 
-        bool compare_i(uint64_t test_int) {
-            switch (ref_type) {
-            case SniffType::i8:
-            case SniffType::i32:
-            case SniffType::i64:
-            case SniffType::u8:
-            case SniffType::u32:
-            case SniffType::u64:
-                return test_int == int_value;
-            }
+	public:
+		SniffValue() {}
+		SniffValue(const char * value) : str_value(value), ref_type(SniffType::str) {}
 
-            return false;
-        }
+		void updateStringValue() {
+			std::string new_value;
 
-        bool compare_s(std::string & test_str) {
-            switch (ref_type) {
-            case SniffType::str:
-                return test_str == str_value;
-            }
+			switch (ref_type) {
+			case SniffType::i8:
+			case SniffType::i32:
+			case SniffType::i64:
+				new_value = std::to_string(int_value);
+				break;
+			case SniffType::u8:
+			case SniffType::u32:
+			case SniffType::u64:
+				new_value = std::to_string(uint_value);
+				break;
+			case SniffType::f32:
+			case SniffType::f64:
+				new_value = std::to_string(fp_value);
+				break;
+			case SniffType::str:
+				new_value = str_value;
+				break;
+			}
 
-            return false;
-        }
+			str_value = new_value;
+		}
 
-        bool compare_f(double_t test_fp) {
-            switch (ref_type) {
-            case SniffType::f32:
-            case SniffType::f64:
-                return test_fp == fp_value;
-            }
+		bool compare_i(uint64_t test_int) {
+			switch (ref_type) {
+			case SniffType::i8:
+			case SniffType::i32:
+			case SniffType::i64:
+			case SniffType::u8:
+			case SniffType::u32:
+			case SniffType::u64:
+				return test_int == int_value;
+			}
 
-            return false;
-        }
+			return false;
+		}
 
-        void setValue(const std::string & value) {
-            this->str_value = value;
-            ref_type = SniffType::str;
-            ref_bytes = 0;
-        }
+		bool compare_s(std::string & test_str) {
+			switch (ref_type) {
+			case SniffType::str:
+				return test_str == str_value;
+			}
 
-        void setOldValue(const std::string & old_value) {
-            old_str_value = old_value;
-        }
+			return false;
+		}
 
-        void setValue(int8_t value) {
-            int_value = value;
-            ref_type = SniffType::i8;
-            ref_bytes = 1;
-        }
+		bool compare_f(double_t test_fp) {
+			switch (ref_type) {
+			case SniffType::f32:
+			case SniffType::f64:
+				return test_fp == fp_value;
+			}
 
-        void setValue(int32_t value) {
-            int_value = value;
-            ref_type = SniffType::i32;
-            ref_bytes = 4;
-        }
+			return false;
+		}
 
-        void setValue(int64_t value) {
-            int_value = value;
-            ref_type = SniffType::i64;
-            ref_bytes = 8;
-        }
+		void setValue(const std::string & value) {
+			this->str_value = value;
+			ref_type = SniffType::str;
+			ref_bytes = 0;
+		}
 
-        void setValue(uint8_t value) {
-            uint_value = value;
-            ref_type = SniffType::u8;
-            ref_bytes = 1;
-        }
+		void setOldValue(const std::string & old_value) {
+			old_str_value = old_value;
+		}
 
-        void setValue(uint32_t value) {
-            uint_value = value;
-            ref_type = SniffType::u32;
-            ref_bytes = 4;
-        }
+		void setValue(int8_t value) {
+			int_value = value;
+			ref_type = SniffType::i8;
+			ref_bytes = 1;
+		}
 
-        void setValue(uint64_t value) {
-            uint_value = value;
-            ref_type = SniffType::u64;
-            ref_bytes = 8;
-        }
+		void setValue(int32_t value) {
+			int_value = value;
+			ref_type = SniffType::i32;
+			ref_bytes = 4;
+		}
 
-        void setValue(float_t value) {
-            fp_value = value;
-            ref_type = SniffType::f32;
-            ref_bytes = 4;
-        }
+		void setValue(int64_t value) {
+			int_value = value;
+			ref_type = SniffType::i64;
+			ref_bytes = 8;
+		}
 
-        void setValue(double_t value) {
-            fp_value = value;
-            ref_type = SniffType::f64;
-            ref_bytes = 8;
-        }
+		void setValue(uint8_t value) {
+			uint_value = value;
+			ref_type = SniffType::u8;
+			ref_bytes = 1;
+		}
 
-        const std::string & asString() {
-            prime();
-            return str_value;
-        }
+		void setValue(uint32_t value) {
+			uint_value = value;
+			ref_type = SniffType::u32;
+			ref_bytes = 4;
+		}
 
-        const std::string & getOldStringValue() {
-            return old_str_value;
-        }
+		void setValue(uint64_t value) {
+			uint_value = value;
+			ref_type = SniffType::u64;
+			ref_bytes = 8;
+		}
 
-        const int8_t asI8() {
-            prime();
-            return static_cast<int8_t>(int_value);
-        }
+		void setValue(float_t value) {
+			fp_value = value;
+			ref_type = SniffType::f32;
+			ref_bytes = 4;
+		}
 
-        const int32_t asI32() {
-            prime();
-            return static_cast<int32_t>(int_value);
-        }
+		void setValue(double_t value) {
+			fp_value = value;
+			ref_type = SniffType::f64;
+			ref_bytes = 8;
+		}
 
-        const int64_t asI64() {
-            prime();
-            return int_value;
-        }
+		const std::string & asString() {
+			prime();
+			return str_value;
+		}
 
-        const uint8_t asU8() {
-            prime();
-            return static_cast<uint8_t>(uint_value);
-        }
+		const std::string & getOldStringValue() {
+			return old_str_value;
+		}
 
-        const uint32_t asU32() {
-            prime();
-            return static_cast<uint32_t>(uint_value);
-        }
+		const int8_t asI8() {
+			prime();
+			return static_cast<int8_t>(int_value);
+		}
 
-        const uint64_t asU64() {
-            prime();
-            return uint_value;
-        }
+		const int32_t asI32() {
+			prime();
+			return static_cast<int32_t>(int_value);
+		}
 
-        const float_t asF32() {
-            prime();
-            return static_cast<float>(fp_value);
-        }
+		const int64_t asI64() {
+			prime();
+			return int_value;
+		}
 
-        const double_t asF64() {
-            prime();
-            return fp_value;
-        }
+		const uint8_t asU8() {
+			prime();
+			return static_cast<uint8_t>(uint_value);
+		}
 
-        uint64_t num_ref_bytes() {
-            return ref_bytes;
-        }
+		const uint32_t asU32() {
+			prime();
+			return static_cast<uint32_t>(uint_value);
+		}
 
-        SniffValue & operator=(const SniffValue & other) {
-            str_value = other.str_value;
-            int_value = other.int_value;
-            uint_value = other.uint_value;
-            fp_value = other.fp_value;
-            ref_type = other.ref_type;
-            primed = other.primed;
-            return *this;
-        }
-    };
+		const uint64_t asU64() {
+			prime();
+			return uint_value;
+		}
 
-    class SniffRecord {
-    public:
-        SniffRecord() : pid(0), location(0), type(SniffType::unknown) {};
-        SniffRecord(uint64_t pid, uint64_t location, SniffType type) : pid(pid), location(location), type(type) {};
-        uint64_t pid;
-        uint64_t location;
-        SniffType type;
-        SniffValue value;
-    };
+		const float_t asF32() {
+			prime();
+			return static_cast<float>(fp_value);
+		}
 
-    BOOL setPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege);
-    void getAllProcesses(std::vector<PROCESSENTRY32> & out_vec);
-    void setDebugPriv();
-    std::vector<PROCESSENTRY32> getOpenProcesses();
-    std::vector<DWORD> findProcessId(const std::wstring & processName);
-    std::set<uint64_t> getAllLivePIDs();
-    std::vector<MemoryRegionRecord> getAllMemoryRegionsForPID(DWORD pid);
-    std::vector<DWORD> getPIDSForProcessName(std::wstring proc_name);
-    void getMemoryRegionCopyForMemoryRegionRecord(const MemoryRegionRecord & record, MemoryRegionCopy & out_region);
-    void getMemoryForSniffRecord(SniffRecord & record, MemoryRegionCopy & out_region);
-    void setByteAtLocationForPidAndLocation(uint64_t pid, uint64_t location, char byte_to_set);
-    const char * getSniffTypeStrForType(SniffType type);
-    SniffRecord getSniffRecordFromLine(const std::string & str);
-    std::unordered_map<std::string, std::vector<win_api::SniffRecord>> getSniffsForProcess(const std::string & exec_name);
-    void writeSniffsToSniffFile(const std::string & exec_name, std::vector<SniffRecord> & sniff_records, std::ofstream & sniff_file);
-    SniffType getSniffTypeForStr(const std::string & type_str);
+		const double_t asF64() {
+			prime();
+			return fp_value;
+		}
+
+		uint64_t num_ref_bytes() {
+			return ref_bytes;
+		}
+
+		SniffValue & operator=(const SniffValue & other) {
+			str_value = other.str_value;
+			int_value = other.int_value;
+			uint_value = other.uint_value;
+			fp_value = other.fp_value;
+			ref_type = other.ref_type;
+			primed = other.primed;
+			return *this;
+		}
+	};
+
+	class SniffRecord {
+	public:
+		SniffRecord() : pid(0), location(0), type(SniffType::unknown) {};
+		SniffRecord(uint64_t pid, uint64_t location, SniffType type) : pid(pid), location(location), type(type) {};
+		uint64_t pid;
+		uint64_t location;
+		SniffType type;
+		SniffValue value;
+	};
+
+	BOOL setPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege);
+	void getAllProcesses(std::vector<PROCESSENTRY32> & out_vec);
+	void setDebugPriv();
+	std::vector<PROCESSENTRY32> getOpenProcesses();
+	std::vector<DWORD> findProcessId(const std::wstring & processName);
+	std::set<uint64_t> getAllLivePIDs();
+	std::vector<MemoryRegionRecord> getAllMemoryRegionsForPID(DWORD pid);
+	std::vector<DWORD> getPIDSForProcessName(std::wstring proc_name);
+	//void getMemoryRegionCopyForMemoryRegionRecord(const MemoryRegionRecord & record, MemoryRegionCopy & out_region);
+	//void getMemoryForSniffRecord(SniffRecord & record, MemoryRegionCopy & out_region);
+	void setByteAtLocationForPidAndLocation(uint64_t pid, uint64_t location, char byte_to_set);
+	const char * getSniffTypeStrForType(SniffType type);
+	SniffRecord getSniffRecordFromLine(const std::string & str);
+	std::unordered_map<std::string, std::vector<win_api::SniffRecord>> getSniffsForProcess(const std::string & exec_name);
+	void writeSniffsToSniffFile(const std::string & exec_name, std::vector<SniffRecord> & sniff_records, std::ofstream & sniff_file);
+	SniffType getSniffTypeForStr(const std::string & type_str);
 }
