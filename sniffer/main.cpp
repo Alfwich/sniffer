@@ -198,10 +198,16 @@ void do_sniffs(int id, SharedMemory * sm) {
 	win_api::SniffRecord record;
 	bool match = false;
 	std::vector<win_api::SniffType> type_matches;
-	uint8_t non_str_bytes[8];
+	uint8_t bound_bytes[8] = { 0 };
+	uint8_t * non_str_bytes;
+	auto mem_region_copy = win_api::MemoryRegionCopy();
 	for (size_t job_id = sm->getNextJob(); job_id < sm->records.size(); job_id = sm->getNextJob()) {
+		ProfileTimer thread_job_timer(id + 1);
 		const auto & region_record = sm->records[job_id];
-		auto mem_region_copy = win_api::MemoryRegionCopy(region_record.AssociatedPid, region_record.BaseAddress, region_record.RegionSize);
+		mem_region_copy.reset(
+			region_record.AssociatedPid,
+			region_record.BaseAddress,
+			region_record.RegionSize);
 		for (uint64_t i = 0; mem_region_copy.is_good() && i < mem_region_copy.size(); ++i) {
 			match = false;
 			type_matches.clear();
@@ -209,8 +215,15 @@ void do_sniffs(int id, SharedMemory * sm) {
 			record.pid = region_record.AssociatedPid;
 			record.location = (uint64_t)(region_record.BaseAddress) + i;
 
-			for (auto j = 0; j < 8 && i + j < mem_region_copy.size(); ++j) {
-				non_str_bytes[j] = mem_region_copy[i + j];
+
+			if (mem_region_copy.index_is_boundary(i)) {
+				for (auto j = 0; j < 8 && i + j < mem_region_copy.size(); ++j) {
+					bound_bytes[j] = mem_region_copy[i + j];
+				}
+				non_str_bytes = bound_bytes;
+			}
+			else {
+				non_str_bytes = &mem_region_copy[i];
 			}
 
 			if (stype_is_type_or_none(sniff_type_pred, win_api::SniffType::str) && i + value_string_to_find.size() < mem_region_copy.size()) {
@@ -323,11 +336,15 @@ void do_resniffs(int id, SharedMemory * sm) {
 	auto resniff_type_pred = win_api::getSniffTypeForStr(resniff_type_pred_str);
 	auto resniff_value_pred_str = sm->args.at("ctx_param");
 	auto resniff_value_pred = win_api::SniffValue(resniff_value_pred_str.c_str());
+	auto mem_region_copy = win_api::MemoryRegionCopy();
 	for (size_t job_id = sm->getNextJob(); job_id < sm->sniffs->size(); job_id = sm->getNextJob()) {
 		auto & sniff = sm->sniffs->at(job_id);
 		bool match = false;
-		auto mem_region_copy = win_api::MemoryRegionCopy((win_api::DWORD)sniff.pid, (win_api::LPVOID) sniff.location, sniff.type == win_api::SniffType::str ? sniff.value.asString().size() : 8);
 
+		mem_region_copy.reset(
+			(win_api::DWORD)sniff.pid,
+			(win_api::LPVOID) sniff.location,
+			sniff.type == win_api::SniffType::str ? sniff.value.asString().size() : 8);
 		if (!is_update_resniff && resniff_type_pred != win_api::SniffType::unknown) {
 			if (sniff.type != resniff_type_pred) {
 				sm->thread_resniffs[id].insert(job_id);
@@ -1030,6 +1047,8 @@ int main(int argc, char * argv[]) {
 				threads.pop_back();
 			}
 			std::cout << " done" << std::endl;
+
+			ProfileTimer::ReportAllContexts();
 
 			mem.resetMultiThreadState();
 		}

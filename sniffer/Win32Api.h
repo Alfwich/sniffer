@@ -39,15 +39,23 @@ namespace win_api {
 		uint64_t pid = 0;
 		uint64_t base = 0;
 		uint64_t region_size = 0;
+		uint64_t page_size = 0;
 		void buffer_if_needed(uint64_t addr_from_base_to_load);
 		uint64_t translate_index(uint64_t i);
 		bool has_failed_load = false;
 	public:
 
-		MemoryRegionCopy(win_api::DWORD pid, win_api::LPVOID location, win_api::SIZE_T size) 
-			: pid((uint64_t)pid), base((uint64_t)location), region_size((uint64_t)size) {
-			const static auto page_size = getSystemPageSize();
-			bytes.resize(page_size * 3);
+		MemoryRegionCopy() {
+			page_size = getSystemPageSize();
+			bytes.resize(page_size * 1024);
+		}
+
+		void reset(win_api::DWORD pid, win_api::LPVOID location, win_api::SIZE_T size) {
+			has_failed_load = false;
+			max_loaded_mem_location = 0;
+			this->pid = pid;
+			base = (uint64_t)location;
+			region_size = (uint64_t)size;
 			buffer_if_needed(0);
 		}
 
@@ -56,6 +64,7 @@ namespace win_api {
 		uint64_t size() { return region_size; }
 
 		bool is_good() { return !has_failed_load && region_size != 0 && base != 0; }
+		bool index_is_boundary(uint64_t i) { return i + 8 >= bytes.size(); }
 	};
 
 	enum class SniffType {

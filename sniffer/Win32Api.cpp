@@ -331,10 +331,10 @@ namespace win_api {
 		win_api::SIZE_T total_bytes_read = 0;
 		win_api::SIZE_T num_bytes_read = 0;
 
-		static auto PAGE_SIZE = getSystemPageSize();
-		auto chunk_factor = PAGE_SIZE;
+		auto max_chunk_factor = page_size * 64;
+		auto chunk_factor = max_chunk_factor;
 		auto start = (SIZE_T)max_loaded_mem_location + base;
-		auto end = min(start + PAGE_SIZE, base + region_size);
+		auto end = min(start + (page_size * 1022), base + region_size);
 		auto i = 0;
 		while (start < end) {
 			auto translated_index = translate_index(addr_from_base_to_load + total_bytes_read);
@@ -347,8 +347,8 @@ namespace win_api {
 				&num_bytes_read
 			);
 
-			if (rpm_result != 0 && chunk_factor < PAGE_SIZE) {
-				chunk_factor = min(chunk_factor * 4, PAGE_SIZE);
+			if (rpm_result != 0 && chunk_factor < max_chunk_factor) {
+				chunk_factor = min(chunk_factor * 4, max_chunk_factor);
 			}
 
 			if (rpm_result == 0 && chunk_factor > 1) {
