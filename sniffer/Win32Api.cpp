@@ -120,7 +120,9 @@ namespace win_api {
 				break;
 			}
 
-			result.push_back(MemoryRegionRecord(pid, memory_basic_info));
+			if (memory_basic_info.State != MEM_FREE) {
+				result.push_back(MemoryRegionRecord(pid, memory_basic_info));
+			}
 			addr += memory_basic_info.RegionSize;
 		}
 
@@ -132,43 +134,6 @@ namespace win_api {
 	std::vector<DWORD> getPIDSForProcessName(std::wstring proc_name) {
 		return findProcessId(proc_name);
 	}
-
-	/*
-	void getMemoryRegionCopyForMemoryRegionRecord(const MemoryRegionRecord & record, MemoryRegionCopy & out_region) {
-	}
-	*/
-
-	/*
-	void getMemoryForSniffRecord(SniffRecord & record, MemoryRegionCopy & out_region) {
-		const auto proc_handle = OpenProcess(
-			PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION,
-			false,
-			(DWORD)record.pid
-		);
-
-		out_region.bytes.clear();
-		uint64_t read_size = record.type == SniffType::str ? record.value.asString().size() : 8;
-		char * buffer = new char[read_size];
-
-		SIZE_T num_bytes_read = 0;
-
-		auto rpm_result = ReadProcessMemory(
-			proc_handle,
-			(LPVOID)record.location,
-			(LPVOID)buffer,
-			read_size,
-			&num_bytes_read
-		);
-
-		for (uint64_t i = 0; i < num_bytes_read && i < read_size; ++i) {
-			out_region.bytes.push_back(buffer[i]);
-		}
-
-		delete[] buffer;
-
-		CloseHandle(proc_handle);
-	}
-	*/
 
 	void setByteAtLocationForPidAndLocation(uint64_t pid, uint64_t location, char byte_to_set) {
 		if (pid == 0 || location == 0) return;
@@ -342,6 +307,18 @@ namespace win_api {
 		return SniffType::unknown;
 	}
 
+	std::string getNumSystemCores() {
+		SYSTEM_INFO sysinfo;
+		GetSystemInfo(&sysinfo);
+		return std::to_string(sysinfo.dwNumberOfProcessors);
+	}
+
+	uint64_t getSystemPageSize() {
+		SYSTEM_INFO sysinfo;
+		GetSystemInfo(&sysinfo);
+		return static_cast<uint64_t>(sysinfo.dwPageSize);
+	}
+
 	void MemoryRegionCopy::buffer_if_needed(uint64_t addr_from_base_to_load) {
 		if (region_size == 0 || base == 0 || addr_from_base_to_load < max_loaded_mem_location) return;
 
@@ -354,9 +331,10 @@ namespace win_api {
 		win_api::SIZE_T total_bytes_read = 0;
 		win_api::SIZE_T num_bytes_read = 0;
 
-		auto chunk_factor = RPM_CHUNK_READ_SIZE;
+		static auto PAGE_SIZE = getSystemPageSize();
+		auto chunk_factor = PAGE_SIZE;
 		auto start = (SIZE_T)max_loaded_mem_location + base;
-		auto end = min(start + RPM_CHUNK_READ_SIZE, base + region_size);
+		auto end = min(start + PAGE_SIZE, base + region_size);
 		auto i = 0;
 		while (start < end) {
 			auto translated_index = translate_index(addr_from_base_to_load + total_bytes_read);
@@ -369,8 +347,8 @@ namespace win_api {
 				&num_bytes_read
 			);
 
-			if (rpm_result != 0 && chunk_factor < RPM_CHUNK_READ_SIZE) {
-				chunk_factor = min(chunk_factor * 4, RPM_CHUNK_READ_SIZE);
+			if (rpm_result != 0 && chunk_factor < PAGE_SIZE) {
+				chunk_factor = min(chunk_factor * 4, PAGE_SIZE);
 			}
 
 			if (rpm_result == 0 && chunk_factor > 1) {

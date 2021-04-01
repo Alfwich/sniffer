@@ -16,6 +16,8 @@ namespace win_api {
 #include "Windows.h"
 #include "tlhelp32.h"
 
+	uint64_t getSystemPageSize();
+
 	class MemoryRegionRecord : public MEMORY_BASIC_INFORMATION {
 	public:
 		MemoryRegionRecord(DWORD pid, MEMORY_BASIC_INFORMATION & info) {
@@ -44,7 +46,8 @@ namespace win_api {
 
 		MemoryRegionCopy(win_api::DWORD pid, win_api::LPVOID location, win_api::SIZE_T size) 
 			: pid((uint64_t)pid), base((uint64_t)location), region_size((uint64_t)size) {
-			bytes.resize(RPM_CHUNK_READ_SIZE * MEM_REGION_NUM_PAGES);
+			const static auto page_size = getSystemPageSize();
+			bytes.resize(page_size * 3);
 			buffer_if_needed(0);
 		}
 
@@ -151,6 +154,8 @@ namespace win_api {
 	public:
 		SniffValue() {}
 		SniffValue(const char * value) : str_value(value), ref_type(SniffType::str) {}
+		SniffValue(std::string value) : str_value(value), ref_type(SniffType::str) {}
+		SniffValue(std::string & value) : str_value(value), ref_type(SniffType::str) {}
 
 		void updateStringValue() {
 			std::string new_value;
@@ -351,12 +356,11 @@ namespace win_api {
 	std::set<uint64_t> getAllLivePIDs();
 	std::vector<MemoryRegionRecord> getAllMemoryRegionsForPID(DWORD pid);
 	std::vector<DWORD> getPIDSForProcessName(std::wstring proc_name);
-	//void getMemoryRegionCopyForMemoryRegionRecord(const MemoryRegionRecord & record, MemoryRegionCopy & out_region);
-	//void getMemoryForSniffRecord(SniffRecord & record, MemoryRegionCopy & out_region);
 	void setByteAtLocationForPidAndLocation(uint64_t pid, uint64_t location, char byte_to_set);
 	const char * getSniffTypeStrForType(SniffType type);
 	SniffRecord getSniffRecordFromLine(const std::string & str);
 	std::unordered_map<std::string, std::vector<win_api::SniffRecord>> getSniffsForProcess(const std::string & exec_name);
 	void writeSniffsToSniffFile(const std::string & exec_name, std::vector<SniffRecord> & sniff_records, std::ofstream & sniff_file);
 	SniffType getSniffTypeForStr(const std::string & type_str);
+	std::string getNumSystemCores();
 }
