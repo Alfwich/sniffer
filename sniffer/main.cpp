@@ -25,9 +25,11 @@ class SharedMemory {
 public:
 	SharedMemory(const SnifferArgs & args, std::vector<win_api::SniffRecord> * sniffs, std::vector<win_api::MemoryRegionRecord> & records, uint32_t num_threads) : args(args), sniffs(sniffs), records(records), num_threads(num_threads) {
 		thread_resniffs.resize(num_threads);
+		thread_sniffs.resize(num_threads);
 	}
 
 	std::vector<std::set<size_t>> thread_resniffs;
+	std::vector<std::vector<win_api::SniffRecord>> thread_sniffs;
 	void resetMultiThreadState() {
 		std::lock_guard<std::mutex> stack_lock(lock);
 		current_job = 0;
@@ -41,11 +43,6 @@ public:
 	size_t getCurrentJobIndex() {
 		std::lock_guard<std::mutex> stack_lock(lock);
 		return current_job;
-	}
-
-	void addSniffRecord(win_api::SniffRecord & record) {
-		std::lock_guard<std::mutex> stack_lock(add_record_lock);
-		sniffs->emplace_back(record);
 	}
 
 	std::vector<win_api::MemoryRegionRecord> & records;
@@ -215,7 +212,6 @@ void do_sniffs(int id, SharedMemory * sm) {
 			record.pid = region_record.AssociatedPid;
 			record.location = (uint64_t)(region_record.BaseAddress) + i;
 
-
 			if (mem_region_copy.index_is_boundary(i)) {
 				for (auto j = 0; j < 8 && i + j < mem_region_copy.size(); ++j) {
 					bound_bytes[j] = mem_region_copy[i + j];
@@ -235,7 +231,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::str;
 					record.value.setValue(value_to_find.asString());
-					sm->addSniffRecord(record);
+					sm->thread_sniffs[id].push_back(record);
 				}
 			}
 
@@ -245,7 +241,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::u8;
 					record.value.setValue(*non_str_bytes);
-					sm->addSniffRecord(record);
+					sm->thread_sniffs[id].push_back(record);
 				}
 			}
 
@@ -256,7 +252,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::u32;
 					record.value.setValue(val);
-					sm->addSniffRecord(record);
+					sm->thread_sniffs[id].push_back(record);
 				}
 			}
 
@@ -267,7 +263,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::u64;
 					record.value.setValue(val);
-					sm->addSniffRecord(record);
+					sm->thread_sniffs[id].push_back(record);
 				}
 			}
 
@@ -278,7 +274,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::i8;
 					record.value.setValue(val);
-					sm->addSniffRecord(record);
+					sm->thread_sniffs[id].push_back(record);
 				}
 			}
 
@@ -289,7 +285,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::i32;
 					record.value.setValue(val);
-					sm->addSniffRecord(record);
+					sm->thread_sniffs[id].push_back(record);
 				}
 			}
 
@@ -300,7 +296,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::i64;
 					record.value.setValue(val);
-					sm->addSniffRecord(record);
+					sm->thread_sniffs[id].push_back(record);
 				}
 			}
 
@@ -311,7 +307,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::f32;
 					record.value.setValue(val);
-					sm->addSniffRecord(record);
+					sm->thread_sniffs[id].push_back(record);
 				}
 			}
 
@@ -322,7 +318,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 				if (match) {
 					record.type = win_api::SniffType::f64;
 					record.value.setValue(val);
-					sm->addSniffRecord(record);
+					sm->thread_sniffs[id].push_back(record);
 				}
 			}
 		}
@@ -1047,6 +1043,12 @@ int main(int argc, char * argv[]) {
 				threads.pop_back();
 			}
 			std::cout << " done" << std::endl;
+
+			for (const auto & records_vec : mem.thread_sniffs) {
+				for (const auto & record : records_vec) {
+					mem.sniffs->emplace_back(record);
+				}
+			}
 
 			ProfileTimer::ReportAllContexts();
 

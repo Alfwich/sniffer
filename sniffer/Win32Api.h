@@ -64,7 +64,7 @@ namespace win_api {
 		uint64_t size() { return region_size; }
 
 		bool is_good() { return !has_failed_load && region_size != 0 && base != 0; }
-		bool index_is_boundary(uint64_t i) { return i + 8 >= bytes.size(); }
+		bool index_is_boundary(uint64_t i) { return translate_index(i) + 8 >= bytes.size(); }
 	};
 
 	enum class SniffType {
