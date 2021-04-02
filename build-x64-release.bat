@@ -1,0 +1,1 @@
+msbuild sniffer.sln /property:Platform=x64 /property:Configuration=Release
