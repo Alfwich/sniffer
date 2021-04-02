@@ -204,7 +204,9 @@ void do_sniffs(int id, SharedMemory * sm) {
 		mem_region_copy.reset(
 			region_record.AssociatedPid,
 			region_record.BaseAddress,
-			region_record.RegionSize);
+			region_record.RegionSize,
+			region_record.is_split_record && !region_record.is_end_record
+		);
 		for (uint64_t i = 0; mem_region_copy.is_good() && i < mem_region_copy.size(); ++i) {
 			match = false;
 			type_matches.clear();
@@ -340,7 +342,9 @@ void do_resniffs(int id, SharedMemory * sm) {
 		mem_region_copy.reset(
 			(win_api::DWORD)sniff.pid,
 			(win_api::LPVOID) sniff.location,
-			sniff.type == win_api::SniffType::str ? sniff.value.asString().size() : 8);
+			sniff.type == win_api::SniffType::str ? sniff.value.asString().size() : 8,
+			false
+		);
 		if (!is_update_resniff && resniff_type_pred != win_api::SniffType::unknown) {
 			if (sniff.type != resniff_type_pred) {
 				sm->thread_resniffs[id].insert(job_id);
@@ -1020,6 +1024,33 @@ int main(int argc, char * argv[]) {
 		}
 
 		ProfileTimer timer("sniffer command");
+
+		std::vector<win_api::MemoryRegionRecord> split_records;
+		const auto SPLIT_SIZE = 1024 * 1024 * 4;
+		for (auto it = records.begin(); it != records.end();) {
+			if ((*it).RegionSize > SPLIT_SIZE) {
+				const auto record_to_split = (*it);
+				const auto max_mem_location_of_split = (uint64_t)record_to_split.BaseAddress + record_to_split.RegionSize;
+				std::cout << record_to_split.BaseAddress << " size: " << record_to_split.RegionSize << std::endl;
+				for (uint64_t i = (uint64_t)record_to_split.BaseAddress, max = (uint64_t)record_to_split.BaseAddress + record_to_split.RegionSize; i < max; i += SPLIT_SIZE) {
+					auto cpy = win_api::MemoryRegionRecord(record_to_split);
+					cpy.BaseAddress = (win_api::PVOID) i;
+					cpy.RegionSize = (i + SPLIT_SIZE) > max ? max - i : SPLIT_SIZE;
+					split_records.push_back(cpy);
+					split_records.back().is_split_record = true;
+					split_records.back().is_end_record = false;
+				}
+				split_records.back().is_end_record = true;
+				it = records.erase(it);
+			}
+			else {
+				++it;
+			}
+		}
+
+		for (const auto & split_record : split_records) {
+			records.push_back(split_record);
+		}
 
 		SharedMemory mem(args, sniffs, records, num_threads);
 		const auto actions = getActionsForArgsAndSharedMem(args, mem);

@@ -334,7 +334,7 @@ namespace win_api {
 		auto max_chunk_factor = page_size * 64;
 		auto chunk_factor = max_chunk_factor;
 		auto start = (SIZE_T)max_loaded_mem_location + base;
-		auto end = min(start + (page_size * 1022), base + region_size);
+		auto end = min(start + (page_size * 1022), (base + region_size + (refs_split_record ? 1024 : 0)));
 		auto i = 0;
 		while (start < end) {
 			auto translated_index = translate_index(addr_from_base_to_load + total_bytes_read);

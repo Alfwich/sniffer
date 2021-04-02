@@ -30,7 +30,16 @@ namespace win_api {
 			Protect = info.Protect;
 			Type = info.Type;
 		}
+
+		MemoryRegionRecord(const MemoryRegionRecord & other) : MEMORY_BASIC_INFORMATION(other) {
+			AssociatedPid = other.AssociatedPid;
+			is_split_record = other.is_split_record;
+			is_end_record = other.is_end_record;
+		}
+
 		DWORD AssociatedPid;
+		bool is_split_record = false;
+		bool is_end_record = true;
 	};
 
 	class MemoryRegionCopy {
@@ -43,6 +52,7 @@ namespace win_api {
 		void buffer_if_needed(uint64_t addr_from_base_to_load);
 		uint64_t translate_index(uint64_t i);
 		bool has_failed_load = false;
+		bool refs_split_record = false;
 	public:
 
 		MemoryRegionCopy() {
@@ -50,12 +60,13 @@ namespace win_api {
 			bytes.resize(page_size * 1024);
 		}
 
-		void reset(win_api::DWORD pid, win_api::LPVOID location, win_api::SIZE_T size) {
+		void reset(win_api::DWORD pid, win_api::LPVOID location, win_api::SIZE_T size, bool refs_split_record) {
 			has_failed_load = false;
 			max_loaded_mem_location = 0;
 			this->pid = pid;
 			base = (uint64_t)location;
 			region_size = (uint64_t)size;
+			this->refs_split_record = refs_split_record;
 			buffer_if_needed(0);
 		}
 
