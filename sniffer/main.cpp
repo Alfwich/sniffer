@@ -186,12 +186,55 @@ bool sniff_cmp_f(std::string & pred, double_t a, double_t b) {
 	return false;
 }
 
+std::set<uint8_t> getFirstBytes(win_api::SniffValue & value) {
+
+	std::set<uint8_t> first_bytes;
+	const auto str = value.asString();
+	first_bytes.insert(str[0]);
+
+	first_bytes.insert(value.asI8());
+	first_bytes.insert(value.asU8());
+
+	const auto i32 = value.asI32();
+	first_bytes.insert(*(uint8_t *)&i32);
+
+	const auto i64 = value.asI64();
+	first_bytes.insert(*(uint8_t *)&i64);
+
+	const auto u32 = value.asU32();
+	first_bytes.insert(*(uint8_t *)&u32);
+
+	const auto u64 = value.asU64();
+	first_bytes.insert(*(uint8_t *)&u64);
+
+	const auto f32 = value.asF32();
+	first_bytes.insert(*(uint8_t *)&f32);
+
+	const auto f64 = value.asF32();
+	first_bytes.insert(*(uint8_t *)&f64);
+
+	return first_bytes;
+}
+
+void find_next_sniff_loc(uint64_t & i, win_api::MemoryRegionCopy & region, uint64_t & num_zeros) {
+	if (num_zeros > 0) {
+		num_zeros--;
+		++i;
+	}
+	else {
+		while (region[i++] == '\0' && i < region.size() && region.is_good()) { }
+		i -= 7;
+		num_zeros = 8;
+	}
+}
+
 void do_sniffs(int id, SharedMemory * sm) {
 	auto sniff_pred_str = sm->args.at("spred", "eq");
 	auto sniff_type_pred_str = sm->args.at("stype");
 	auto sniff_type_pred = win_api::getSniffTypeForStr(sniff_type_pred_str);
 	const auto value_string_to_find = sm->args.at("ctx_param").empty() ? sm->args.getArgAtIndex(1) : sm->args.at("ctx_param");
 	auto value_to_find = win_api::SniffValue(value_string_to_find.c_str());
+	auto first_bytes = getFirstBytes(value_to_find);
 	win_api::SniffRecord record;
 	bool match = false;
 	std::vector<win_api::SniffType> type_matches;
@@ -207,12 +250,17 @@ void do_sniffs(int id, SharedMemory * sm) {
 			region_record.RegionSize,
 			region_record.is_split_record && !region_record.is_end_record
 		);
-		for (uint64_t i = 0; mem_region_copy.is_good() && i < mem_region_copy.size(); ++i) {
+		uint64_t num_zeros = 0;
+		for (uint64_t i = 0; mem_region_copy.is_good() && i < mem_region_copy.size(); find_next_sniff_loc(i, mem_region_copy, num_zeros)) {
 			match = false;
 			type_matches.clear();
 
 			record.pid = region_record.AssociatedPid;
 			record.location = (uint64_t)(region_record.BaseAddress) + i;
+
+			if (first_bytes.count(mem_region_copy[i]) == 0) {
+				continue;
+			}
 
 			if (mem_region_copy.index_is_boundary(i)) {
 				for (auto j = 0; j < 8 && i + j < mem_region_copy.size(); ++j) {
@@ -1026,7 +1074,7 @@ int main(int argc, char * argv[]) {
 		ProfileTimer timer("sniffer command");
 
 		std::vector<win_api::MemoryRegionRecord> split_records;
-		const auto SPLIT_SIZE = 1024 * 1024 * 4;
+		const auto SPLIT_SIZE = 1024 * 1024 * 100;
 		for (auto it = records.begin(); it != records.end();) {
 			if ((*it).RegionSize > SPLIT_SIZE) {
 				const auto record_to_split = (*it);
