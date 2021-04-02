@@ -376,11 +376,12 @@ namespace win_api {
 	std::set<uint64_t> getAllLivePIDs();
 	std::vector<MemoryRegionRecord> getAllMemoryRegionsForPID(DWORD pid);
 	std::vector<DWORD> getPIDSForProcessName(std::wstring proc_name);
-	void setByteAtLocationForPidAndLocation(uint64_t pid, uint64_t location, char byte_to_set);
+	void setBytesAtLocationForPidAndLocation(uint64_t pid, uint64_t location, uint8_t * bytes, size_t size);
 	const char * getSniffTypeStrForType(SniffType type);
 	SniffRecord getSniffRecordFromLine(const std::string & str);
 	std::unordered_map<std::string, std::vector<win_api::SniffRecord>> getSniffsForProcess(const std::string & exec_name);
 	void writeSniffsToSniffFile(const std::string & exec_name, std::vector<SniffRecord> & sniff_records, std::ofstream & sniff_file);
 	SniffType getSniffTypeForStr(const std::string & type_str);
 	std::string getNumSystemCores();
+	void clear_open_handles();
 }

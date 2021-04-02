@@ -17,13 +17,20 @@
 #include "Win32Api.h"
 #include "Utils.h"
 
+class JobIndexs {
+public:
+	uint64_t start_index = 0;
+	uint64_t end_index = 0;
+};
+
 class SharedMemory {
 	size_t current_job = 0;
+	uint64_t job_spread;
 	std::mutex lock;
-	std::mutex add_record_lock;
 	uint32_t num_threads;
 public:
-	SharedMemory(const SnifferArgs & args, std::vector<win_api::SniffRecord> * sniffs, std::vector<win_api::MemoryRegionRecord> & records, uint32_t num_threads) : args(args), sniffs(sniffs), records(records), num_threads(num_threads) {
+	SharedMemory(const SnifferArgs & args, std::vector<win_api::SniffRecord> * sniffs, std::vector<win_api::MemoryRegionRecord> & records, uint32_t num_threads, uint64_t job_spread)
+		: args(args), sniffs(sniffs), records(records), num_threads(num_threads), job_spread(job_spread) {
 		thread_resniffs.resize(num_threads);
 		thread_sniffs.resize(num_threads);
 	}
@@ -35,9 +42,11 @@ public:
 		current_job = 0;
 	}
 
-	size_t getNextJob() {
+	void getNextJob(JobIndexs & job_index) {
 		std::lock_guard<std::mutex> stack_lock(lock);
-		return current_job++;
+		job_index.start_index = current_job;
+		current_job += job_spread;
+		job_index.end_index = current_job++;
 	}
 
 	size_t getCurrentJobIndex() {
@@ -53,85 +62,60 @@ public:
 void do_sniff_mem_replace(win_api::SniffRecord & sniff, win_api::SniffValue & value_to_set) {
 	switch (sniff.type) {
 	case win_api::SniffType::str: {
-		for (auto j = 0; j < value_to_set.asString().size(); ++j) {
-			win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, value_to_set.asString()[j]);
-		}
+		const auto value = value_to_set.asString();
+		win_api::setBytesAtLocationForPidAndLocation(sniff.pid, sniff.location, (uint8_t *) &value[0], value.size());
 		sniff.value.setOldValue(sniff.value.asString());
 		sniff.value.setValue(value_to_set.asString());
 	} break;
 
 	case win_api::SniffType::i8: {
 		int8_t value = value_to_set.asI8();
-		char * value_byte_ptr = (char *)&value;
-		for (auto j = 0; j < 1; ++j) {
-			win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
-		}
+		win_api::setBytesAtLocationForPidAndLocation(sniff.pid, sniff.location, (uint8_t *)&value, 1);
 		sniff.value.setOldValue(std::to_string(sniff.value.asI64()));
 		sniff.value.setValue(value);
 	} break;
 	case win_api::SniffType::i32: {
 		int32_t value = value_to_set.asI32();
-		char * value_byte_ptr = (char *)&value;
-		for (auto j = 0; j < 4; ++j) {
-			win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
-		}
+		win_api::setBytesAtLocationForPidAndLocation(sniff.pid, sniff.location, (uint8_t *)&value, 4);
 		sniff.value.setOldValue(std::to_string(sniff.value.asI64()));
 		sniff.value.setValue(value);
 	} break;
 	case win_api::SniffType::i64: {
 		int64_t value = value_to_set.asI64();
-		char * value_byte_ptr = (char *)&value;
-		for (auto j = 0; j < 8; ++j) {
-			win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
-		}
+		win_api::setBytesAtLocationForPidAndLocation(sniff.pid, sniff.location, (uint8_t *)&value, 8);
 		sniff.value.setOldValue(std::to_string(sniff.value.asI64()));
 		sniff.value.setValue(value);
 	} break;
 
 	case win_api::SniffType::u8: {
 		uint8_t value = value_to_set.asU8();
-		char * value_byte_ptr = (char *)&value;
-		for (auto j = 0; j < 1; ++j) {
-			win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
-		}
+		win_api::setBytesAtLocationForPidAndLocation(sniff.pid, sniff.location, &value, 8);
 		sniff.value.setOldValue(std::to_string(sniff.value.asU64()));
 		sniff.value.setValue(value);
 	} break;
 	case win_api::SniffType::u32: {
 		uint32_t value = value_to_set.asU32();
-		char * value_byte_ptr = (char *)&value;
-		for (auto j = 0; j < 4; ++j) {
-			win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
-		}
+		win_api::setBytesAtLocationForPidAndLocation(sniff.pid, sniff.location, (uint8_t *)&value, 4);
 		sniff.value.setOldValue(std::to_string(sniff.value.asU64()));
 		sniff.value.setValue(value);
 	} break;
 	case win_api::SniffType::u64: {
 		uint64_t value = value_to_set.asU64();
-		char * value_byte_ptr = (char *)&value;
-		for (auto j = 0; j < 8; ++j) {
-			win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
-		}
+		win_api::setBytesAtLocationForPidAndLocation(sniff.pid, sniff.location, (uint8_t *)&value, 8);
 		sniff.value.setOldValue(std::to_string(sniff.value.asU64()));
 		sniff.value.setValue(value);
 	} break;
 
 	case win_api::SniffType::f32: {
 		float_t value = value_to_set.asF32();
-		char * value_byte_ptr = (char *)&value;
-		for (auto j = 0; j < 4; ++j) {
-			win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
-		}
+		win_api::setBytesAtLocationForPidAndLocation(sniff.pid, sniff.location, (uint8_t *)&value, 4);
 		sniff.value.setOldValue(std::to_string(sniff.value.asF64()));
 		sniff.value.setValue(value);
 	} break;
 
 	case win_api::SniffType::f64: {
 		double_t value = value_to_set.asF64();
-		char * value_byte_ptr = (char *)&value;
-		for (auto j = 0; j < 8; ++j) {
-			win_api::setByteAtLocationForPidAndLocation(sniff.pid, sniff.location + j, *(value_byte_ptr + j));
-		}
+		win_api::setBytesAtLocationForPidAndLocation(sniff.pid, sniff.location, (uint8_t *)&value, 8);
 		sniff.value.setOldValue(std::to_string(sniff.value.asF64()));
 		sniff.value.setValue(value);
 	} break;
@@ -141,10 +125,12 @@ void do_sniff_mem_replace(win_api::SniffRecord & sniff, win_api::SniffValue & va
 void do_replaces(int id, SharedMemory * sm) {
 	auto value_to_set = win_api::SniffValue(sm->args.getContext());
 
-	for (size_t job_id = sm->getNextJob(); job_id < sm->sniffs->size(); job_id = sm->getNextJob()) {
-		auto & sniff = sm->sniffs->at(job_id);
-
-		do_sniff_mem_replace(sniff, value_to_set);
+	JobIndexs indexs;
+	for (sm->getNextJob(indexs); indexs.start_index < sm->sniffs->size(); sm->getNextJob(indexs)) {
+		for (uint64_t i = indexs.start_index; i < indexs.end_index && i < sm->sniffs->size(); ++i) {
+			auto & sniff = sm->sniffs->at(i);
+			do_sniff_mem_replace(sniff, value_to_set);
+		}
 	}
 }
 
@@ -247,9 +233,10 @@ void do_sniffs(int id, SharedMemory * sm) {
 	uint8_t bound_bytes[8] = { 0 };
 	uint8_t * non_str_bytes;
 	auto mem_region_copy = win_api::MemoryRegionCopy();
-	for (size_t job_id = sm->getNextJob(); job_id < sm->records.size(); job_id = sm->getNextJob()) {
+	JobIndexs indexs;
+	for (sm->getNextJob(indexs); indexs.start_index < sm->records.size(); sm->getNextJob(indexs)) {
 		ProfileTimer thread_job_timer(id + 1);
-		const auto & region_record = sm->records[job_id];
+		const auto & region_record = sm->records[indexs.start_index];
 		mem_region_copy.reset(
 			region_record.AssociatedPid,
 			region_record.BaseAddress,
@@ -389,152 +376,155 @@ void do_resniffs(int id, SharedMemory * sm) {
 	auto resniff_value_pred_str = sm->args.at("ctx_param");
 	auto resniff_value_pred = win_api::SniffValue(resniff_value_pred_str.c_str());
 	auto mem_region_copy = win_api::MemoryRegionCopy();
-	for (size_t job_id = sm->getNextJob(); job_id < sm->sniffs->size(); job_id = sm->getNextJob()) {
-		auto & sniff = sm->sniffs->at(job_id);
-		bool match = false;
+	JobIndexs indexs;
+	for (sm->getNextJob(indexs); indexs.start_index < sm->sniffs->size(); sm->getNextJob(indexs)) {
+		for (uint64_t i = indexs.start_index; i < indexs.end_index && i < sm->sniffs->size(); ++i) {
+			auto & sniff = sm->sniffs->at(i);
+			bool match = false;
 
-		mem_region_copy.reset(
-			(win_api::DWORD)sniff.pid,
-			(win_api::LPVOID) sniff.location,
-			sniff.type == win_api::SniffType::str ? sniff.value.asString().size() : 8,
-			false
-		);
-		if (!is_update_resniff && resniff_type_pred != win_api::SniffType::unknown) {
-			if (sniff.type != resniff_type_pred) {
-				sm->thread_resniffs[id].insert(job_id);
-				continue;
-			}
-		}
-
-		if (sniff.type == win_api::SniffType::str) {
-			const auto cmp_str =
-				resniff_value_pred_str.empty() ? sniff.value.asString() : resniff_value_pred.asString();
-
-			for (uint64_t j = 0; j < sniff.value.asString().size(); ++j) {
-				match = sniff_cmp_i(resniff_pred_str, mem_region_copy[j], cmp_str.at(j));
-
-				if (!match) break;
+			mem_region_copy.reset(
+				(win_api::DWORD)sniff.pid,
+				(win_api::LPVOID) sniff.location,
+				sniff.type == win_api::SniffType::str ? sniff.value.asString().size() : 8,
+				false
+			);
+			if (!is_update_resniff && resniff_type_pred != win_api::SniffType::unknown) {
+				if (sniff.type != resniff_type_pred) {
+					sm->thread_resniffs[id].insert(i);
+					continue;
+				}
 			}
 
-			if (is_update_resniff || match) {
-				sniff.value.setValue(cmp_str);
-			}
-		}
-		else if (sniff.type == win_api::SniffType::i8) {
-			int8_t val = *(int8_t *)&mem_region_copy[0];
+			if (sniff.type == win_api::SniffType::str) {
+				const auto cmp_str =
+					resniff_value_pred_str.empty() ? sniff.value.asString() : resniff_value_pred.asString();
 
-			if (resniff_value_pred_str.empty()) {
-				match = sniff_cmp_i(resniff_pred_str, val, sniff.value.asI8());
+				for (uint64_t j = 0; j < sniff.value.asString().size(); ++j) {
+					match = sniff_cmp_i(resniff_pred_str, mem_region_copy[j], cmp_str.at(j));
+
+					if (!match) break;
+				}
+
+				if (is_update_resniff || match) {
+					sniff.value.setValue(cmp_str);
+				}
 			}
-			else {
-				match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asI8());
+			else if (sniff.type == win_api::SniffType::i8) {
+				int8_t val = *(int8_t *)&mem_region_copy[0];
+
+				if (resniff_value_pred_str.empty()) {
+					match = sniff_cmp_i(resniff_pred_str, val, sniff.value.asI8());
+				}
+				else {
+					match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asI8());
+				}
+
+				if (is_update_resniff || match) {
+					sniff.value.setValue(val);
+				}
+			}
+			else if (sniff.type == win_api::SniffType::i32) {
+				int32_t val = *(int32_t *)&mem_region_copy[0];
+
+				if (resniff_value_pred_str.empty()) {
+					match = sniff_cmp_i(resniff_pred_str, val, sniff.value.asI32());
+				}
+				else {
+					match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asI32());
+				}
+
+				if (is_update_resniff || match) {
+					sniff.value.setValue(val);
+				}
+			}
+			else if (sniff.type == win_api::SniffType::i64) {
+				int64_t val = *(int64_t *)&mem_region_copy[0];
+
+				if (resniff_value_pred_str.empty()) {
+					match = sniff_cmp_i(resniff_pred_str, val, sniff.value.asI64());
+				}
+				else {
+					match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asI64());
+				}
+
+				if (is_update_resniff || match) {
+					sniff.value.setValue(val);
+				}
+			}
+			else if (sniff.type == win_api::SniffType::u8) {
+				uint8_t val = *(uint8_t *)&mem_region_copy[0];
+
+				if (resniff_value_pred_str.empty()) {
+					match = sniff_cmp_i(resniff_pred_str, val, sniff.value.asU8());
+				}
+				else {
+					match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asU8());
+				}
+
+				if (is_update_resniff || match) {
+					sniff.value.setValue(val);
+				}
+			}
+			else if (sniff.type == win_api::SniffType::u32) {
+				uint32_t val = *(uint32_t *)&mem_region_copy[0];
+
+				if (resniff_value_pred_str.empty()) {
+					match = sniff_cmp_i(resniff_pred_str, val, sniff.value.asU32());
+				}
+				else {
+					match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asU32());
+				}
+
+				if (is_update_resniff || match) {
+					sniff.value.setValue(val);
+				}
+			}
+			else if (sniff.type == win_api::SniffType::u64) {
+				uint64_t val = *(uint64_t *)&mem_region_copy[0];
+
+				if (resniff_value_pred_str.empty()) {
+					match = sniff_cmp_i(resniff_pred_str, val, sniff.value.asU64());
+				}
+				else {
+					match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asU64());
+				}
+
+				if (is_update_resniff || match) {
+					sniff.value.setValue(val);
+				}
+			}
+			else if (sniff.type == win_api::SniffType::f32) {
+				float_t val = *(float_t *)&mem_region_copy[0];
+
+				if (resniff_value_pred_str.empty()) {
+					match = sniff_cmp_f(resniff_pred_str, val, sniff.value.asF32());
+				}
+				else {
+					match = sniff_cmp_f(resniff_pred_str, val, resniff_value_pred.asF32());
+				}
+
+				if (is_update_resniff || match) {
+					sniff.value.setValue(val);
+				}
+			}
+			else if (sniff.type == win_api::SniffType::f64) {
+				double_t val = *(double_t *)&mem_region_copy[0];
+
+				if (resniff_value_pred_str.empty()) {
+					match = sniff_cmp_f(resniff_pred_str, val, sniff.value.asF64());
+				}
+				else {
+					match = sniff_cmp_f(resniff_pred_str, val, resniff_value_pred.asF64());
+				}
+
+				if (is_update_resniff || match) {
+					sniff.value.setValue(val);
+				}
 			}
 
-			if (is_update_resniff || match) {
-				sniff.value.setValue(val);
+			if (!is_update_resniff && !match) {
+				sm->thread_resniffs[id].insert(i);
 			}
-		}
-		else if (sniff.type == win_api::SniffType::i32) {
-			int32_t val = *(int32_t *)&mem_region_copy[0];
-
-			if (resniff_value_pred_str.empty()) {
-				match = sniff_cmp_i(resniff_pred_str, val, sniff.value.asI32());
-			}
-			else {
-				match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asI32());
-			}
-
-			if (is_update_resniff || match) {
-				sniff.value.setValue(val);
-			}
-		}
-		else if (sniff.type == win_api::SniffType::i64) {
-			int64_t val = *(int64_t *)&mem_region_copy[0];
-
-			if (resniff_value_pred_str.empty()) {
-				match = sniff_cmp_i(resniff_pred_str, val, sniff.value.asI64());
-			}
-			else {
-				match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asI64());
-			}
-
-			if (is_update_resniff || match) {
-				sniff.value.setValue(val);
-			}
-		}
-		else if (sniff.type == win_api::SniffType::u8) {
-			uint8_t val = *(uint8_t *)&mem_region_copy[0];
-
-			if (resniff_value_pred_str.empty()) {
-				match = sniff_cmp_i(resniff_pred_str, val, sniff.value.asU8());
-			}
-			else {
-				match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asU8());
-			}
-
-			if (is_update_resniff || match) {
-				sniff.value.setValue(val);
-			}
-		}
-		else if (sniff.type == win_api::SniffType::u32) {
-			uint32_t val = *(uint32_t *)&mem_region_copy[0];
-
-			if (resniff_value_pred_str.empty()) {
-				match = sniff_cmp_i(resniff_pred_str, val, sniff.value.asU32());
-			}
-			else {
-				match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asU32());
-			}
-
-			if (is_update_resniff || match) {
-				sniff.value.setValue(val);
-			}
-		}
-		else if (sniff.type == win_api::SniffType::u64) {
-			uint64_t val = *(uint64_t *)&mem_region_copy[0];
-
-			if (resniff_value_pred_str.empty()) {
-				match = sniff_cmp_i(resniff_pred_str, val, sniff.value.asU64());
-			}
-			else {
-				match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asU64());
-			}
-
-			if (is_update_resniff || match) {
-				sniff.value.setValue(val);
-			}
-		}
-		else if (sniff.type == win_api::SniffType::f32) {
-			float_t val = *(float_t *)&mem_region_copy[0];
-
-			if (resniff_value_pred_str.empty()) {
-				match = sniff_cmp_f(resniff_pred_str, val, sniff.value.asF32());
-			}
-			else {
-				match = sniff_cmp_f(resniff_pred_str, val, resniff_value_pred.asF32());
-			}
-
-			if (is_update_resniff || match) {
-				sniff.value.setValue(val);
-			}
-		}
-		else if (sniff.type == win_api::SniffType::f64) {
-			double_t val = *(double_t *)&mem_region_copy[0];
-
-			if (resniff_value_pred_str.empty()) {
-				match = sniff_cmp_f(resniff_pred_str, val, sniff.value.asF64());
-			}
-			else {
-				match = sniff_cmp_f(resniff_pred_str, val, resniff_value_pred.asF64());
-			}
-
-			if (is_update_resniff || match) {
-				sniff.value.setValue(val);
-			}
-		}
-
-		if (!is_update_resniff && !match) {
-			sm->thread_resniffs[id].insert(job_id);
 		}
 	}
 }
@@ -1106,7 +1096,8 @@ int main(int argc, char * argv[]) {
 			records.push_back(split_record);
 		}
 
-		SharedMemory mem(args, sniffs, records, num_threads);
+		uint64_t job_spread = args.actionIs("find") ? 1 : 1024;
+		SharedMemory mem(args, sniffs, records, num_threads, job_spread);
 		const auto actions = getActionsForArgsAndSharedMem(args, mem);
 		for (const auto action : actions) {
 			std::vector<std::thread> threads;
@@ -1194,6 +1185,8 @@ int main(int argc, char * argv[]) {
 
 	replace_thread_is_running = false;
 	replace_thread.join();
+
+	win_api::clear_open_handles();
 
 	return 0;
 }

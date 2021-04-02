@@ -15,6 +15,27 @@
 #include "Params.h"
 
 namespace win_api {
+	std::unordered_map<DWORD, HANDLE> open_handles;
+
+	HANDLE open_process(DWORD pid) {
+		if (open_handles.count(pid) == 0) {
+			open_handles[pid] = OpenProcess(
+				PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION,
+				false,
+				pid
+			);
+		}
+
+		return open_handles.at(pid);
+	}
+
+	void clear_open_handles() {
+		for (const auto & handle : open_handles) {
+			CloseHandle(handle.second);
+		}
+		open_handles.clear();
+	}
+
 	BOOL setPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege) {
 		LUID luid;
 		BOOL bRet = FALSE;
@@ -100,12 +121,7 @@ namespace win_api {
 
 	std::vector<MemoryRegionRecord> getAllMemoryRegionsForPID(DWORD pid) {
 		auto result = std::vector<MemoryRegionRecord>();
-		const auto proc_handle = OpenProcess(
-			PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION,
-			false,
-			pid
-		);
-
+		const auto proc_handle = open_process(pid);
 		auto memory_basic_info = MEMORY_BASIC_INFORMATION();
 		auto addr = unsigned long long(0);
 		while (true) {
@@ -126,8 +142,6 @@ namespace win_api {
 			addr += memory_basic_info.RegionSize;
 		}
 
-		CloseHandle(proc_handle);
-
 		return result;
 	}
 
@@ -135,30 +149,23 @@ namespace win_api {
 		return findProcessId(proc_name);
 	}
 
-	void setByteAtLocationForPidAndLocation(uint64_t pid, uint64_t location, char byte_to_set) {
+	void setBytesAtLocationForPidAndLocation(uint64_t pid, uint64_t location, uint8_t * bytes, size_t size) {
 		if (pid == 0 || location == 0) return;
 
-		const auto proc_handle = OpenProcess(
-			PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION,
-			false,
-			(DWORD)pid
-		);
+		const auto proc_handle = open_process((win_api::DWORD)pid);
 
-		DWORD oldprotect;
+		static DWORD oldprotect;
 		LPVOID dst = (LPVOID)((SIZE_T)location);
-		VirtualProtectEx(proc_handle, dst, 1, PAGE_EXECUTE_READWRITE, &oldprotect);
+		VirtualProtectEx(proc_handle, dst, size, PAGE_EXECUTE_READWRITE, &oldprotect);
 		SIZE_T num_bytes_written = 0;
-		char byte_to_write = byte_to_set;
 		auto wpm_result = WriteProcessMemory(
 			proc_handle,
 			dst,
-			(LPVOID)&byte_to_write,
-			1,
+			(LPVOID)bytes,
+			size,
 			&num_bytes_written
 		);
-		VirtualProtectEx(proc_handle, dst, 1, oldprotect, &oldprotect);
-
-		CloseHandle(proc_handle);
+		VirtualProtectEx(proc_handle, dst, size, oldprotect, &oldprotect);
 	}
 
 	const char * getSniffTypeStrForType(SniffType type) {
@@ -322,11 +329,7 @@ namespace win_api {
 	void MemoryRegionCopy::buffer_if_needed(uint64_t addr_from_base_to_load) {
 		if (region_size == 0 || base == 0 || addr_from_base_to_load < max_loaded_mem_location) return;
 
-		const auto proc_handle = OpenProcess(
-			PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION,
-			false,
-			(win_api::DWORD) pid
-		);
+		const auto proc_handle = open_process((win_api::DWORD)pid);
 
 		win_api::SIZE_T total_bytes_read = 0;
 		win_api::SIZE_T num_bytes_read = 0;
@@ -363,8 +366,6 @@ namespace win_api {
 			total_bytes_read += num_bytes_read;
 			start += num_bytes_read;
 		}
-
-		CloseHandle(proc_handle);
 
 		max_loaded_mem_location += total_bytes_read;
 	}
