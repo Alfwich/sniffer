@@ -216,18 +216,6 @@ std::set<uint8_t> getFirstBytes(win_api::SniffValue & value) {
 	return first_bytes;
 }
 
-void find_next_sniff_loc(uint64_t & i, win_api::MemoryRegionCopy & region, uint64_t & num_zeros) {
-	if (num_zeros > 0) {
-		num_zeros--;
-		++i;
-	}
-	else {
-		while (region[i++] == '\0' && i < region.size() && region.is_good()) { }
-		i -= 7;
-		num_zeros = 8;
-	}
-}
-
 void do_sniffs(int id, SharedMemory * sm) {
 	auto sniff_pred_str = sm->args.at("spred", "eq");
 	auto sniff_type_pred_str = sm->args.at("stype");
@@ -250,8 +238,7 @@ void do_sniffs(int id, SharedMemory * sm) {
 			region_record.RegionSize,
 			region_record.is_split_record && !region_record.is_end_record
 		);
-		uint64_t num_zeros = 0;
-		for (uint64_t i = 0; mem_region_copy.is_good() && i < mem_region_copy.size(); find_next_sniff_loc(i, mem_region_copy, num_zeros)) {
+		for (uint64_t i = 0; mem_region_copy.is_good() && i < mem_region_copy.size(); ++i) {
 			match = false;
 			type_matches.clear();
 
