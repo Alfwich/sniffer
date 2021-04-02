@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="sniff-victim-large-memory-usage.cpp">
+    <ClCompile Include="test-large.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

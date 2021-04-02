@@ -8,19 +8,21 @@
 #include <set>
 #include <vector>
 #include <unordered_map>
+#include <mutex>
+#include <thread>
 
 #include "Params.h"
 
-namespace win_api {
+namespace w32 {
 
 #include "Windows.h"
 #include "tlhelp32.h"
 
-	uint64_t getSystemPageSize();
+	uint64_t get_system_page_size();
 
-	class MemoryRegionRecord : public MEMORY_BASIC_INFORMATION {
+	class memory_region_record_t : public MEMORY_BASIC_INFORMATION {
 	public:
-		MemoryRegionRecord(DWORD pid, MEMORY_BASIC_INFORMATION & info) {
+		memory_region_record_t(DWORD pid, MEMORY_BASIC_INFORMATION & info) {
 			AssociatedPid = pid;
 			BaseAddress = info.BaseAddress;
 			AllocationBase = info.AllocationBase;
@@ -31,7 +33,7 @@ namespace win_api {
 			Type = info.Type;
 		}
 
-		MemoryRegionRecord(const MemoryRegionRecord & other) : MEMORY_BASIC_INFORMATION(other) {
+		memory_region_record_t(const memory_region_record_t & other) : MEMORY_BASIC_INFORMATION(other) {
 			AssociatedPid = other.AssociatedPid;
 			is_split_record = other.is_split_record;
 			is_end_record = other.is_end_record;
@@ -42,7 +44,7 @@ namespace win_api {
 		bool is_end_record = true;
 	};
 
-	class MemoryRegionCopy {
+	class memory_region_copy_t {
 		std::vector<uint8_t> bytes;
 		uint64_t max_loaded_mem_location = 0;
 		uint64_t pid = 0;
@@ -55,12 +57,12 @@ namespace win_api {
 		bool refs_split_record = false;
 	public:
 
-		MemoryRegionCopy() {
-			page_size = getSystemPageSize();
+		memory_region_copy_t() {
+			page_size = get_system_page_size();
 			bytes.resize(page_size * 1024);
 		}
 
-		void reset(win_api::DWORD pid, win_api::LPVOID location, win_api::SIZE_T size, bool refs_split_record) {
+		void reset(w32::DWORD pid, w32::LPVOID location, w32::SIZE_T size, bool refs_split_record) {
 			has_failed_load = false;
 			max_loaded_mem_location = 0;
 			this->pid = pid;
@@ -78,7 +80,7 @@ namespace win_api {
 		bool index_is_boundary(uint64_t i) { return translate_index(i) + 8 >= bytes.size(); }
 	};
 
-	enum class SniffType {
+	enum class sniff_type_e {
 		unknown,
 		str,
 		i8,
@@ -91,40 +93,40 @@ namespace win_api {
 		f64
 	};
 
-	class SniffValue {
+	class sniff_value_t {
 		std::string str_value = "";
 		std::string old_str_value = "";
 		std::int64_t int_value = 0;
 		std::uint64_t uint_value = 0;
 		std::double_t fp_value = 0.0;
-		win_api::SniffType ref_type = SniffType::unknown;
+		w32::sniff_type_e ref_type = sniff_type_e::unknown;
 		uint64_t ref_bytes = 999;
 		bool primed = false;
 
 		void prime() {
 			if (!primed) {
 				switch (ref_type) {
-				case SniffType::i8:
-				case SniffType::i32:
-				case SniffType::i64:
+				case sniff_type_e::i8:
+				case sniff_type_e::i32:
+				case sniff_type_e::i64:
 					str_value = std::to_string(int_value);
 					fp_value = static_cast<double_t>(int_value);
 					uint_value = static_cast<uint64_t>(int_value);
 					break;
-				case SniffType::u8:
-				case SniffType::u32:
-				case SniffType::u64:
+				case sniff_type_e::u8:
+				case sniff_type_e::u32:
+				case sniff_type_e::u64:
 					str_value = std::to_string(uint_value);
 					fp_value = static_cast<double_t>(uint_value);
 					int_value = static_cast<int64_t>(uint_value);
 					break;
-				case SniffType::f32:
-				case SniffType::f64:
+				case sniff_type_e::f32:
+				case sniff_type_e::f64:
 					str_value = std::to_string(fp_value);
 					int_value = static_cast<int64_t>(fp_value);
 					uint_value = static_cast<uint64_t>(fp_value);
 					break;
-				case SniffType::str:
+				case sniff_type_e::str:
 					try {
 						uint_value = std::stoull(str_value);
 
@@ -172,30 +174,30 @@ namespace win_api {
 		}
 
 	public:
-		SniffValue() {}
-		SniffValue(const char * value) : str_value(value), ref_type(SniffType::str) {}
-		SniffValue(std::string value) : str_value(value), ref_type(SniffType::str) {}
-		SniffValue(std::string & value) : str_value(value), ref_type(SniffType::str) {}
+		sniff_value_t() {}
+		sniff_value_t(const char * value) : str_value(value), ref_type(sniff_type_e::str) {}
+		sniff_value_t(std::string value) : str_value(value), ref_type(sniff_type_e::str) {}
+		sniff_value_t(std::string & value) : str_value(value), ref_type(sniff_type_e::str) {}
 
 		void updateStringValue() {
 			std::string new_value;
 
 			switch (ref_type) {
-			case SniffType::i8:
-			case SniffType::i32:
-			case SniffType::i64:
+			case sniff_type_e::i8:
+			case sniff_type_e::i32:
+			case sniff_type_e::i64:
 				new_value = std::to_string(int_value);
 				break;
-			case SniffType::u8:
-			case SniffType::u32:
-			case SniffType::u64:
+			case sniff_type_e::u8:
+			case sniff_type_e::u32:
+			case sniff_type_e::u64:
 				new_value = std::to_string(uint_value);
 				break;
-			case SniffType::f32:
-			case SniffType::f64:
+			case sniff_type_e::f32:
+			case sniff_type_e::f64:
 				new_value = std::to_string(fp_value);
 				break;
-			case SniffType::str:
+			case sniff_type_e::str:
 				new_value = str_value;
 				break;
 			}
@@ -205,12 +207,12 @@ namespace win_api {
 
 		bool compare_i(uint64_t test_int) {
 			switch (ref_type) {
-			case SniffType::i8:
-			case SniffType::i32:
-			case SniffType::i64:
-			case SniffType::u8:
-			case SniffType::u32:
-			case SniffType::u64:
+			case sniff_type_e::i8:
+			case sniff_type_e::i32:
+			case sniff_type_e::i64:
+			case sniff_type_e::u8:
+			case sniff_type_e::u32:
+			case sniff_type_e::u64:
 				return test_int == int_value;
 			}
 
@@ -219,7 +221,7 @@ namespace win_api {
 
 		bool compare_s(std::string & test_str) {
 			switch (ref_type) {
-			case SniffType::str:
+			case sniff_type_e::str:
 				return test_str == str_value;
 			}
 
@@ -228,8 +230,8 @@ namespace win_api {
 
 		bool compare_f(double_t test_fp) {
 			switch (ref_type) {
-			case SniffType::f32:
-			case SniffType::f64:
+			case sniff_type_e::f32:
+			case sniff_type_e::f64:
 				return test_fp == fp_value;
 			}
 
@@ -238,7 +240,7 @@ namespace win_api {
 
 		void setValue(const std::string & value) {
 			this->str_value = value;
-			ref_type = SniffType::str;
+			ref_type = sniff_type_e::str;
 			ref_bytes = 0;
 		}
 
@@ -248,49 +250,49 @@ namespace win_api {
 
 		void setValue(int8_t value) {
 			int_value = value;
-			ref_type = SniffType::i8;
+			ref_type = sniff_type_e::i8;
 			ref_bytes = 1;
 		}
 
 		void setValue(int32_t value) {
 			int_value = value;
-			ref_type = SniffType::i32;
+			ref_type = sniff_type_e::i32;
 			ref_bytes = 4;
 		}
 
 		void setValue(int64_t value) {
 			int_value = value;
-			ref_type = SniffType::i64;
+			ref_type = sniff_type_e::i64;
 			ref_bytes = 8;
 		}
 
 		void setValue(uint8_t value) {
 			uint_value = value;
-			ref_type = SniffType::u8;
+			ref_type = sniff_type_e::u8;
 			ref_bytes = 1;
 		}
 
 		void setValue(uint32_t value) {
 			uint_value = value;
-			ref_type = SniffType::u32;
+			ref_type = sniff_type_e::u32;
 			ref_bytes = 4;
 		}
 
 		void setValue(uint64_t value) {
 			uint_value = value;
-			ref_type = SniffType::u64;
+			ref_type = sniff_type_e::u64;
 			ref_bytes = 8;
 		}
 
 		void setValue(float_t value) {
 			fp_value = value;
-			ref_type = SniffType::f32;
+			ref_type = sniff_type_e::f32;
 			ref_bytes = 4;
 		}
 
 		void setValue(double_t value) {
 			fp_value = value;
-			ref_type = SniffType::f64;
+			ref_type = sniff_type_e::f64;
 			ref_bytes = 8;
 		}
 
@@ -347,7 +349,7 @@ namespace win_api {
 			return ref_bytes;
 		}
 
-		SniffValue & operator=(const SniffValue & other) {
+		sniff_value_t & operator=(const sniff_value_t & other) {
 			str_value = other.str_value;
 			int_value = other.int_value;
 			uint_value = other.uint_value;
@@ -358,30 +360,52 @@ namespace win_api {
 		}
 	};
 
-	class SniffRecord {
+	class sniff_record_set_t {
+		std::unordered_map<sniff_type_e, std::set<uint64_t>> locations;
 	public:
-		SniffRecord() : pid(0), location(0), type(SniffType::unknown) {};
-		SniffRecord(uint64_t pid, uint64_t location, SniffType type) : pid(pid), location(location), type(type) {};
+		sniff_record_set_t() : pid(0) {};
+		sniff_record_set_t(uint64_t pid, std::vector<uint64_t> locations) : pid(pid) {};
 		uint64_t pid;
-		uint64_t location;
-		SniffType type;
-		SniffValue value;
+		const std::unordered_map<sniff_type_e, std::set<uint64_t>> & getLocations() { return locations; }
+		void setLocation(sniff_type_e value_type, uint64_t value);
+
+		bool empty() const {
+			for (const auto type_to_locations : locations) {
+				if (!type_to_locations.second.empty()) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+		size_t size() const {
+			size_t size = 0;
+
+			for (const auto type_to_locations : locations) {
+				size += type_to_locations.second.size();
+			}
+
+			return size;
+		}
+
+		void clear() {
+			locations.clear();
+		}
+
+		sniff_value_t value;
 	};
 
-	BOOL setPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege);
-	void getAllProcesses(std::vector<PROCESSENTRY32> & out_vec);
-	void setDebugPriv();
-	std::vector<PROCESSENTRY32> getOpenProcesses();
-	std::vector<DWORD> findProcessId(const std::wstring & processName);
-	std::set<uint64_t> getAllLivePIDs();
-	std::vector<MemoryRegionRecord> getAllMemoryRegionsForPID(DWORD pid);
-	std::vector<DWORD> getPIDSForProcessName(std::wstring proc_name);
-	void setBytesAtLocationForPidAndLocation(uint64_t pid, uint64_t location, uint8_t * bytes, size_t size);
-	const char * getSniffTypeStrForType(SniffType type);
-	SniffRecord getSniffRecordFromLine(const std::string & str);
-	std::unordered_map<std::string, std::vector<win_api::SniffRecord>> getSniffsForProcess(const std::string & exec_name);
-	void writeSniffsToSniffFile(const std::string & exec_name, std::vector<SniffRecord> & sniff_records, std::ofstream & sniff_file);
-	SniffType getSniffTypeForStr(const std::string & type_str);
-	std::string getNumSystemCores();
+	BOOL set_privilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege);
+	void get_all_processes(std::vector<PROCESSENTRY32> & out_vec);
+	void set_debug_priv();
+	std::vector<PROCESSENTRY32> get_open_processes();
+	std::vector<DWORD> find_processId(const std::wstring & processName);
+	std::set<uint64_t> get_all_live_pids();
+	std::vector<memory_region_record_t> get_all_memory_regions_for_pid(DWORD pid);
+	std::vector<DWORD> get_all_pids_for_process_name(std::wstring proc_name);
+	void set_bytes_at_location_for_pid(uint64_t pid, uint64_t location, uint8_t * bytes, size_t size);
+	const char * get_sniff_type_str_for_type(sniff_type_e type);
+	sniff_type_e get_sniff_type_for_str(const std::string & type_str);
+	std::string get_num_system_cores();
 	void clear_open_handles();
 }

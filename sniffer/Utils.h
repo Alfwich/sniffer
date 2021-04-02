@@ -7,13 +7,13 @@ namespace {
 	static const std::string default_str = "";
 }
 
-class SnifferArgs {
+class sniffer_args_t {
 	std::unordered_map<std::string, std::string> arg_map;
 	std::vector<std::string> arg_words;
 public:
-	SnifferArgs() {}
-	SnifferArgs(const std::unordered_map<std::string, std::string> & in_args) : arg_map(in_args) {}
-	SnifferArgs(const std::unordered_map<std::string, std::string> & in_args, const std::vector<std::string> & in_words) : arg_map(in_args), arg_words(in_words) {}
+	sniffer_args_t() {}
+	sniffer_args_t(const std::unordered_map<std::string, std::string> & in_args) : arg_map(in_args) {}
+	sniffer_args_t(const std::unordered_map<std::string, std::string> & in_args, const std::vector<std::string> & in_words) : arg_map(in_args), arg_words(in_words) {}
 	bool checkArgs() {
 		static std::unordered_map <std::string, std::vector<std::string> > required = {
 			{ "action", { "sniff", "replace", "resniff", "update", "interactive", "list" } },

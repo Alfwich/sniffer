@@ -19,7 +19,7 @@ public:
 
 static std::map<uint8_t, TimerContext> contexts;
 
-class ProfileTimer {
+class profile_timer_t {
 	uint8_t context = 0;
 	long long start, end;
 	bool started = true;
@@ -41,10 +41,10 @@ class ProfileTimer {
 	}
 
 public:
-	ProfileTimer() : label(""), context(0), start(getCurrentMicroseconds()) {}
-	ProfileTimer(uint8_t context) : label(""), context(context), start(getCurrentMicroseconds()) {}
-	ProfileTimer(const char * label) : label(label), context(0), start(getCurrentMicroseconds()) {}
-	~ProfileTimer() { stop(); }
+	profile_timer_t() : label(""), context(0), start(getCurrentMicroseconds()) {}
+	profile_timer_t(uint8_t context) : label(""), context(context), start(getCurrentMicroseconds()) {}
+	profile_timer_t(const char * label) : label(label), context(0), start(getCurrentMicroseconds()) {}
+	~profile_timer_t() { stop(); }
 
 	static void ReportAllContexts() {
 		for (const auto & context_to_time : contexts) {

@@ -14,7 +14,7 @@
 
 #include "Params.h"
 
-namespace win_api {
+namespace w32 {
 	std::unordered_map<DWORD, HANDLE> open_handles;
 
 	HANDLE open_process(DWORD pid) {
@@ -36,7 +36,7 @@ namespace win_api {
 		open_handles.clear();
 	}
 
-	BOOL setPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege) {
+	BOOL set_privilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege) {
 		LUID luid;
 		BOOL bRet = FALSE;
 
@@ -60,7 +60,7 @@ namespace win_api {
 		return bRet;
 	}
 
-	void getAllProcesses(std::vector<PROCESSENTRY32> & out_vec) {
+	void get_all_processes(std::vector<PROCESSENTRY32> & out_vec) {
 		PROCESSENTRY32 processInfo;
 		processInfo.dwSize = sizeof(processInfo);
 
@@ -79,25 +79,25 @@ namespace win_api {
 		CloseHandle(processesSnapshot);
 	}
 
-	void setDebugPriv() {
+	void set_debug_priv() {
 		HANDLE hProcess = GetCurrentProcess();
 		HANDLE hToken;
 
 		if (OpenProcessToken(hProcess, TOKEN_ADJUST_PRIVILEGES, &hToken)) {
-			setPrivilege(hToken, SE_DEBUG_NAME, TRUE);
+			set_privilege(hToken, SE_DEBUG_NAME, TRUE);
 			CloseHandle(hToken);
 		}
 	}
 
-	std::vector<PROCESSENTRY32> getOpenProcesses() {
+	std::vector<PROCESSENTRY32> get_open_processes() {
 		std::vector<PROCESSENTRY32> output;
-		getAllProcesses(output);
+		get_all_processes(output);
 		return output;
 	}
 
-	std::vector<DWORD> findProcessId(const std::wstring & processName) {
+	std::vector<DWORD> find_processId(const std::wstring & processName) {
 		std::vector<DWORD> result;
-		const auto & all_procs = getOpenProcesses();
+		const auto & all_procs = get_open_processes();
 
 		for (const auto proc : all_procs) {
 			if (processName.compare(proc.szExeFile) == 0) {
@@ -108,9 +108,9 @@ namespace win_api {
 		return result;
 	}
 
-	std::set<uint64_t> getAllLivePIDs() {
+	std::set<uint64_t> get_all_live_pids() {
 		std::set<uint64_t> output;
-		const auto all_procs = getOpenProcesses();
+		const auto all_procs = get_open_processes();
 
 		for (const auto & proc : all_procs) {
 			output.insert(proc.th32ProcessID);
@@ -119,8 +119,8 @@ namespace win_api {
 		return output;
 	}
 
-	std::vector<MemoryRegionRecord> getAllMemoryRegionsForPID(DWORD pid) {
-		auto result = std::vector<MemoryRegionRecord>();
+	std::vector<memory_region_record_t> get_all_memory_regions_for_pid(DWORD pid) {
+		auto result = std::vector<memory_region_record_t>();
 		const auto proc_handle = open_process(pid);
 		auto memory_basic_info = MEMORY_BASIC_INFORMATION();
 		auto addr = unsigned long long(0);
@@ -137,7 +137,7 @@ namespace win_api {
 			}
 
 			if (memory_basic_info.State != MEM_FREE) {
-				result.push_back(MemoryRegionRecord(pid, memory_basic_info));
+				result.push_back(memory_region_record_t(pid, memory_basic_info));
 			}
 			addr += memory_basic_info.RegionSize;
 		}
@@ -145,14 +145,14 @@ namespace win_api {
 		return result;
 	}
 
-	std::vector<DWORD> getPIDSForProcessName(std::wstring proc_name) {
-		return findProcessId(proc_name);
+	std::vector<DWORD> get_all_pids_for_process_name(std::wstring proc_name) {
+		return find_processId(proc_name);
 	}
 
-	void setBytesAtLocationForPidAndLocation(uint64_t pid, uint64_t location, uint8_t * bytes, size_t size) {
+	void set_bytes_at_location_for_pid(uint64_t pid, uint64_t location, uint8_t * bytes, size_t size) {
 		if (pid == 0 || location == 0) return;
 
-		const auto proc_handle = open_process((win_api::DWORD)pid);
+		const auto proc_handle = open_process((w32::DWORD)pid);
 
 		static DWORD oldprotect;
 		LPVOID dst = (LPVOID)((SIZE_T)location);
@@ -168,24 +168,25 @@ namespace win_api {
 		VirtualProtectEx(proc_handle, dst, size, oldprotect, &oldprotect);
 	}
 
-	const char * getSniffTypeStrForType(SniffType type) {
+	const char * get_sniff_type_str_for_type(sniff_type_e type) {
 		switch (type) {
-		case SniffType::str: return "str";
-		case SniffType::i8: return "i8";
-		case SniffType::i32: return "i32";
-		case SniffType::i64: return "i64";
-		case SniffType::u8: return "u8";
-		case SniffType::u32: return "u32";
-		case SniffType::u64: return "u64";
-		case SniffType::f32: return "f32";
-		case SniffType::f64: return "f64";
+		case sniff_type_e::str: return "str";
+		case sniff_type_e::i8: return "i8";
+		case sniff_type_e::i32: return "i32";
+		case sniff_type_e::i64: return "i64";
+		case sniff_type_e::u8: return "u8";
+		case sniff_type_e::u32: return "u32";
+		case sniff_type_e::u64: return "u64";
+		case sniff_type_e::f32: return "f32";
+		case sniff_type_e::f64: return "f64";
 		default:
-		case SniffType::unknown: return "unknown";
+		case sniff_type_e::unknown: return "unknown";
 		}
 	}
 
-	SniffRecord getSniffRecordFromLine(std::string & str) {
-		SniffRecord result;
+	/*
+	SniffRecordSet getSniffRecordFromLine(std::string & str) {
+		SniffRecordSet result;
 		size_t last = 0, next = 0;
 
 		for (auto i = 0; i < 4; ++i) {
@@ -217,8 +218,8 @@ namespace win_api {
 		return result;
 	}
 
-	std::unordered_map<std::string, std::vector<SniffRecord>> getSniffsForProcess(const std::string & sniff_file_name) {
-		std::unordered_map<std::string, std::vector<SniffRecord>> result;
+	std::unordered_map<std::string, std::vector<SniffRecordSet>> getSniffsForProcess(const std::string & sniff_file_name) {
+		std::unordered_map<std::string, std::vector<SniffRecordSet>> result;
 		std::string current_context;
 		std::ifstream sniff_file(sniff_file_name);
 		const auto live_pids = getAllLivePIDs();
@@ -243,7 +244,7 @@ namespace win_api {
 		return result;
 	}
 
-	void writeSniffsToSniffFile(const std::string & sniff_file_name, std::vector<SniffRecord> & sniff_records, std::ofstream & sniff_file) {
+	void writeSniffsToSniffFile(const std::string & sniff_file_name, std::vector<SniffRecordSet> & sniff_records, std::ofstream & sniff_file) {
 		if (sniff_file.is_open()) {
 			for (auto & record : sniff_records) {
 				sniff_file << record.pid << SNIFF_FILE_DELIM << record.location << SNIFF_FILE_DELIM << getSniffTypeStrForType(record.type);
@@ -281,58 +282,59 @@ namespace win_api {
 			}
 		}
 	}
+	*/
 
-	SniffType getSniffTypeForStr(const std::string & type_str) {
+	sniff_type_e get_sniff_type_for_str(const std::string & type_str) {
 		if (type_str == "str") {
-			return SniffType::str;
+			return sniff_type_e::str;
 		}
 		else if (type_str == "i8") {
-			return SniffType::i8;
+			return sniff_type_e::i8;
 		}
 		else if (type_str == "i32") {
-			return SniffType::i32;
+			return sniff_type_e::i32;
 		}
 		else if (type_str == "i64") {
-			return SniffType::i64;
+			return sniff_type_e::i64;
 		}
 		else if (type_str == "u8") {
-			return SniffType::u8;
+			return sniff_type_e::u8;
 		}
 		else if (type_str == "u32") {
-			return SniffType::u32;
+			return sniff_type_e::u32;
 		}
 		else if (type_str == "u64") {
-			return SniffType::u64;
+			return sniff_type_e::u64;
 		}
 		else if (type_str == "f32") {
-			return SniffType::f32;
+			return sniff_type_e::f32;
 		}
 		else if (type_str == "f64") {
-			return SniffType::f64;
+			return sniff_type_e::f64;
 		}
 
-		return SniffType::unknown;
+		return sniff_type_e::unknown;
 	}
 
-	std::string getNumSystemCores() {
+	std::string get_num_system_cores() {
 		SYSTEM_INFO sysinfo;
 		GetSystemInfo(&sysinfo);
 		return std::to_string(sysinfo.dwNumberOfProcessors);
 	}
 
-	uint64_t getSystemPageSize() {
+	uint64_t get_system_page_size() {
 		SYSTEM_INFO sysinfo;
 		GetSystemInfo(&sysinfo);
 		return static_cast<uint64_t>(sysinfo.dwPageSize);
 	}
 
-	void MemoryRegionCopy::buffer_if_needed(uint64_t addr_from_base_to_load) {
+	void memory_region_copy_t::buffer_if_needed(uint64_t addr_from_base_to_load) {
 		if (region_size == 0 || base == 0 || addr_from_base_to_load < max_loaded_mem_location) return;
 
-		const auto proc_handle = open_process((win_api::DWORD)pid);
+		const auto proc_handle = open_process((w32::DWORD)pid);
 
-		win_api::SIZE_T total_bytes_read = 0;
-		win_api::SIZE_T num_bytes_read = 0;
+		w32::SIZE_T total_bytes_read = 0;
+		w32::SIZE_T num_bytes_read = 0;
 
 		auto max_chunk_factor = page_size * 64;
 		auto chunk_factor = max_chunk_factor;
@@ -370,12 +372,19 @@ namespace win_api {
 		max_loaded_mem_location += total_bytes_read;
 	}
 
-	uint64_t MemoryRegionCopy::translate_index(uint64_t i) {
+	uint64_t memory_region_copy_t::translate_index(uint64_t i) {
 		return i % bytes.size();
 	}
 
-	uint8_t & MemoryRegionCopy::operator[](uint64_t i) {
+	uint8_t & memory_region_copy_t::operator[](uint64_t i) {
 		buffer_if_needed(i);
 		return bytes[translate_index(i)];
 	}
+
+	std::mutex sniff_record_set_location_mutex;
+	void sniff_record_set_t::setLocation(sniff_type_e value_type, uint64_t value) {
+		std::lock_guard<std::mutex> lock(sniff_record_set_location_mutex);
+		locations[value_type].insert(value);
+	}
+
 }
