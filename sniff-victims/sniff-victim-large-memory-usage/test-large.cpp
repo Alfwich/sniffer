@@ -5,7 +5,7 @@
 #include <vector>
 #include <Windows.h>
 
-class test_mem {
+class test_mem_t {
 public:
     int8_t static_int8 = 127;
     int32_t static_int32 = 13371337;
@@ -28,11 +28,11 @@ void end_callback(int signum)
 int main(void)
 {
 
-    std::vector<test_mem> mem;
+    std::vector<test_mem_t> mem;
     mem.resize(5000000);
 
     while (running) {
-        const test_mem& first = mem.front();
+        const test_mem_t& first = mem.front();
         system("cls");
         std::cout
             << "Static values" << std::setprecision(16)

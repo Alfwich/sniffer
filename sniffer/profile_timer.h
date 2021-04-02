@@ -6,7 +6,7 @@
 #include <mutex>
 #include <thread>
 
-class TimerContext {
+class timer_context_t {
 public:
 	uint64_t time = 0;
 	std::mutex timer_mutex;
@@ -17,7 +17,7 @@ public:
 	}
 };
 
-static std::map<uint8_t, TimerContext> contexts;
+static std::map<uint8_t, timer_context_t> contexts;
 
 class profile_timer_t {
 	uint8_t context = 0;

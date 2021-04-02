@@ -12,9 +12,9 @@
 #include <unordered_map>
 #include <stdio.h>
 
-#include "Params.h"
-#include "ProfileTimer.h"
-#include "Win32Api.h"
+#include "params.h"
+#include "profile_timer.h"
+#include "w32_api.h"
 #include "Utils.h"
 
 class jobs_indicies_t {

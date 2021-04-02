@@ -18,21 +18,21 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Win32Api.cpp">
+    <ClCompile Include="w32_api.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ProfileTimer.h">
+    <ClInclude Include="w32_api.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Win32Api.h">
+    <ClInclude Include="params.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Params.h">
+    <ClInclude Include="utils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Utils.h">
+    <ClInclude Include="profile_timer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
