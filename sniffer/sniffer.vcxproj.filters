@@ -21,6 +21,9 @@
     <ClCompile Include="w32_api.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="sniffer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="w32_api.h">
@@ -33,6 +36,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="profile_timer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="sniffer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

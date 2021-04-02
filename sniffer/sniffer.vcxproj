@@ -140,11 +140,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="sniffer.cpp" />
     <ClCompile Include="w32_api.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="params.h" />
     <ClInclude Include="profile_timer.h" />
+    <ClInclude Include="sniffer.h" />
     <ClInclude Include="utils.h" />
     <ClInclude Include="w32_api.h" />
   </ItemGroup>
