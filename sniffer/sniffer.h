@@ -214,6 +214,8 @@ namespace sniffer {
 		void set_threaded_vectors() {
 			thread_resniffs.clear();
 			thread_resniffs.resize(num_threads);
+			thread_sniffs.clear();
+			thread_sniffs.resize(num_threads);
 		}
 
 	public:
@@ -228,6 +230,7 @@ namespace sniffer {
 		}
 
 		std::vector<std::set<std::tuple<w32::sniff_type_e, size_t, uint64_t>>> thread_resniffs;
+		std::vector<std::vector<std::tuple<w32::sniff_type_e, size_t, uint64_t>>> thread_sniffs;
 		void reset_thread_work_state() {
 			std::lock_guard<std::mutex> stack_lock(lock);
 			current_job = 0;

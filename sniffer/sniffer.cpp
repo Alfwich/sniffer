@@ -217,7 +217,7 @@ namespace sniffer {
 					}
 
 					if (match) {
-						sm->sniff_record->set_location(w32::sniff_type_e::str, region_record.AssociatedPid, location);
+						sm->thread_sniffs.at(id).push_back(std::make_tuple(w32::sniff_type_e::str, region_record.AssociatedPid, location));
 					}
 				}
 
@@ -225,7 +225,7 @@ namespace sniffer {
 					match = sniff_cmp_i(find_pred_str, *non_str_bytes, value_to_find.as_uint<uint8_t>());
 
 					if (match) {
-						sm->sniff_record->set_location(w32::sniff_type_e::u8, region_record.AssociatedPid, location);
+						sm->thread_sniffs.at(id).push_back(std::make_tuple(w32::sniff_type_e::u8, region_record.AssociatedPid, location));
 					}
 				}
 
@@ -234,7 +234,7 @@ namespace sniffer {
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_uint<uint32_t>());
 
 					if (match) {
-						sm->sniff_record->set_location(w32::sniff_type_e::u32, region_record.AssociatedPid, location);
+						sm->thread_sniffs.at(id).push_back(std::make_tuple(w32::sniff_type_e::u32, region_record.AssociatedPid, location));
 					}
 				}
 
@@ -243,7 +243,7 @@ namespace sniffer {
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_uint<uint64_t>());
 
 					if (match) {
-						sm->sniff_record->set_location(w32::sniff_type_e::u64, region_record.AssociatedPid, location);
+						sm->thread_sniffs.at(id).push_back(std::make_tuple(w32::sniff_type_e::u64, region_record.AssociatedPid, location));
 					}
 				}
 
@@ -252,7 +252,7 @@ namespace sniffer {
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_int<int8_t>());
 
 					if (match) {
-						sm->sniff_record->set_location(w32::sniff_type_e::i8, region_record.AssociatedPid, location);
+						sm->thread_sniffs.at(id).push_back(std::make_tuple(w32::sniff_type_e::i8, region_record.AssociatedPid, location));
 					}
 				}
 
@@ -261,7 +261,7 @@ namespace sniffer {
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_int<int32_t>());
 
 					if (match) {
-						sm->sniff_record->set_location(w32::sniff_type_e::i32, region_record.AssociatedPid, location);
+						sm->thread_sniffs.at(id).push_back(std::make_tuple(w32::sniff_type_e::i32, region_record.AssociatedPid, location));
 					}
 				}
 
@@ -270,7 +270,7 @@ namespace sniffer {
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_int<int64_t>());
 
 					if (match) {
-						sm->sniff_record->set_location(w32::sniff_type_e::i64, region_record.AssociatedPid, location);
+						sm->thread_sniffs.at(id).push_back(std::make_tuple(w32::sniff_type_e::i64, region_record.AssociatedPid, location));
 					}
 				}
 
@@ -279,7 +279,7 @@ namespace sniffer {
 					match = sniff_cmp_f(find_pred_str, val, value_to_find.as_float<float_t>());
 
 					if (match) {
-						sm->sniff_record->set_location(w32::sniff_type_e::f32, region_record.AssociatedPid, location);
+						sm->thread_sniffs.at(id).push_back(std::make_tuple(w32::sniff_type_e::f32, region_record.AssociatedPid, location));
 					}
 				}
 
@@ -288,7 +288,7 @@ namespace sniffer {
 					match = sniff_cmp_f(find_pred_str, val, value_to_find.as_float<double_t>());
 
 					if (match) {
-						sm->sniff_record->set_location(w32::sniff_type_e::f64, region_record.AssociatedPid, location);
+						sm->thread_sniffs.at(id).push_back(std::make_tuple(w32::sniff_type_e::f64, region_record.AssociatedPid, location));
 					}
 				}
 			}
@@ -469,7 +469,7 @@ namespace sniffer {
 			}
 
 			if (ctx.state.sniffs->empty()) {
-				std::cout << "Have no sniffs to replace - run 'find' to find some memory locations" << std::endl;
+				std::cout << "Have no sniffs to set - run 'find' to find some memory locations" << std::endl;
 				result.clear();
 				return result;
 			}
@@ -631,7 +631,7 @@ namespace sniffer {
 			std::cout << "\t\t<undo>" << std::endl;
 			std::cout << "\t\t<profile>" << std::endl;
 			std::cout << "\tReplace all values in memory:" << std::endl;
-			std::cout << "\t\t<replace, r> \"VALUE\"" << std::endl;
+			std::cout << "\t\t<set> \"VALUE\"" << std::endl;
 			std::cout << "\tReplace values in memory continuously:" << std::endl;
 			std::cout << "\t\t<repeat> \"VALUE\" <<id|range>>" << std::endl;
 			std::cout << "\t\t<repeat> <list, ls>" << std::endl;
@@ -1003,8 +1003,17 @@ namespace sniffer {
 
 	void do_post_workload(sniffer_context_t & ctx) {
 		profile_timer_t timer(ctx.state.profile, __FUNCTION__);
-		if (ctx.args.action_is(sniffer_cmd_e::filter)) {
+		if (ctx.args.action_is(sniffer_cmd_e::find)) {
+			for (auto & sniffs : ctx.mem.thread_sniffs) {
+				for (const auto sniff : sniffs) {
+					ctx.state.sniffs->set_location(std::get<0>(sniff), std::get<1>(sniff), std::get<2>(sniff));
+				}
+			}
+			ctx.mem.thread_sniffs.clear();
+		}
+		else if (ctx.args.action_is(sniffer_cmd_e::filter)) {
 			filter_sniffs(ctx);
+			ctx.mem.thread_resniffs.clear();
 		}
 	}
 
