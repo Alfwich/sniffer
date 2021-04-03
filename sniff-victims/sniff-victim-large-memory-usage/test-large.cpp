@@ -29,7 +29,7 @@ int main(void)
 {
 
     std::vector<test_mem_t> mem;
-    mem.resize(1);
+    mem.resize(50000000);
 
     while (running) {
         const test_mem_t& first = mem.front();

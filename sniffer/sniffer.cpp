@@ -85,6 +85,10 @@ namespace sniffer {
 		return a == b || a == w32::sniff_type_e::unknown;
 	}
 
+	bool inline type_is_type(w32::sniff_type_e a, w32::sniff_type_e b) {
+		return a == b;
+	}
+
 	bool sniff_cmp_i(std::string & pred, uint64_t a, uint64_t b) {
 		if (pred == "lt") {
 			return a < b;
@@ -210,7 +214,7 @@ namespace sniffer {
 					non_str_bytes = &mem_region_copy[i];
 				}
 
-				if (type_is_type_or_none(find_type_pred, w32::sniff_type_e::str) && i + value_string_to_find.size() < mem_region_copy.size()) {
+				if (type_is_type(find_type_pred, w32::sniff_type_e::str) && i + value_string_to_find.size() < mem_region_copy.size()) {
 					for (uint64_t j = 0; j < value_to_find.as_string().size(); ++j) {
 						match = mem_region_copy[i + j] == value_to_find.as_string().at(j);
 						if (!match) break;
@@ -221,7 +225,7 @@ namespace sniffer {
 					}
 				}
 
-				if (min_num_int_bytes <= 1 && type_is_type_or_none(find_type_pred, w32::sniff_type_e::u8)) {
+				if (min_num_int_bytes <= 1 && type_is_type(find_type_pred, w32::sniff_type_e::u8)) {
 					match = sniff_cmp_i(find_pred_str, *non_str_bytes, value_to_find.as_uint<uint8_t>());
 
 					if (match) {
@@ -247,7 +251,7 @@ namespace sniffer {
 					}
 				}
 
-				if (min_num_int_bytes <= 1 && type_is_type_or_none(find_type_pred, w32::sniff_type_e::i8)) {
+				if (min_num_int_bytes <= 1 && type_is_type(find_type_pred, w32::sniff_type_e::i8)) {
 					int8_t val = *(int8_t *)non_str_bytes;
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_int<int8_t>());
 
