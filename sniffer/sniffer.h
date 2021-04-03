@@ -223,7 +223,7 @@ namespace sniffer {
 			std::lock_guard<std::mutex> stack_lock(lock);
 			job_index.start_index = current_job;
 			current_job += job_spread;
-			job_index.end_index = current_job++;
+			job_index.end_index = current_job;
 		}
 
 		size_t getCurrentJobIndex() {
