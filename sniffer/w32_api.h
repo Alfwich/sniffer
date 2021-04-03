@@ -100,7 +100,6 @@ namespace w32 {
 		std::uint64_t uint_value = 0;
 		std::double_t fp_value = 0.0;
 		w32::sniff_type_e ref_type = sniff_type_e::unknown;
-		uint64_t ref_bytes = 999;
 		bool primed = false;
 
 		void prime() {
@@ -129,20 +128,9 @@ namespace w32 {
 				case sniff_type_e::str:
 					try {
 						uint_value = std::stoull(str_value);
-
-						if (uint_value <= 0xFFu) {
-							ref_bytes = 1;
-						}
-						else if (uint_value <= 0xFFFFFFFFu) {
-							ref_bytes = 4;
-						}
-						else {
-							ref_bytes = 8;
-						}
 					}
 					catch (...) {
 						uint_value = 0;
-						ref_bytes = 999;
 					}
 
 					try {
@@ -175,11 +163,12 @@ namespace w32 {
 
 	public:
 		sniff_value_t() {}
+		sniff_value_t(const sniff_value_t & other) { *this = other; }
 		sniff_value_t(const char * value) : str_value(value), ref_type(sniff_type_e::str) {}
 		sniff_value_t(std::string value) : str_value(value), ref_type(sniff_type_e::str) {}
 		sniff_value_t(std::string & value) : str_value(value), ref_type(sniff_type_e::str) {}
 
-		void updateStringValue() {
+		void update_string_value() {
 			std::string new_value;
 
 			switch (ref_type) {
@@ -203,6 +192,53 @@ namespace w32 {
 			}
 
 			str_value = new_value;
+		}
+
+		std::string as_typed_str(sniff_type_e type) {
+			prime();
+
+			std::string result;
+
+			switch (type) {
+			case sniff_type_e::i8:
+				result = std::to_string((int8_t)int_value);
+				break;
+
+			case sniff_type_e::i32:
+				result = std::to_string((int32_t)int_value);
+				break;
+
+			case sniff_type_e::i64:
+				result = std::to_string((int64_t)int_value);
+				break;
+
+			case sniff_type_e::u8:
+				result = std::to_string((uint8_t)uint_value);
+				break;
+
+			case sniff_type_e::u32:
+				result = std::to_string((uint32_t)uint_value);
+				break;
+
+			case sniff_type_e::u64:
+				result = std::to_string((uint64_t)uint_value);
+				break;
+
+			case sniff_type_e::f32:
+				result = std::to_string((float_t)fp_value);
+				break;
+
+			case sniff_type_e::f64:
+				result = std::to_string((double_t)fp_value);
+				break;
+
+			case sniff_type_e::str:
+			default:
+				result = str_value;
+				break;
+			}
+
+			return result;
 		}
 
 		bool compare_i(uint64_t test_int) {
@@ -238,115 +274,89 @@ namespace w32 {
 			return false;
 		}
 
-		void setValue(const std::string & value) {
+		void set_value(const std::string & value) {
 			this->str_value = value;
 			ref_type = sniff_type_e::str;
-			ref_bytes = 0;
 		}
 
-		void setOldValue(const std::string & old_value) {
-			old_str_value = old_value;
-		}
-
-		void setValue(int8_t value) {
+		void set_value(int8_t value) {
 			int_value = value;
 			ref_type = sniff_type_e::i8;
-			ref_bytes = 1;
 		}
 
-		void setValue(int32_t value) {
+		void set_value(int32_t value) {
 			int_value = value;
 			ref_type = sniff_type_e::i32;
-			ref_bytes = 4;
 		}
 
-		void setValue(int64_t value) {
+		void set_value(int64_t value) {
 			int_value = value;
 			ref_type = sniff_type_e::i64;
-			ref_bytes = 8;
 		}
 
-		void setValue(uint8_t value) {
+		void set_value(uint8_t value) {
 			uint_value = value;
 			ref_type = sniff_type_e::u8;
-			ref_bytes = 1;
 		}
 
-		void setValue(uint32_t value) {
+		void set_value(uint32_t value) {
 			uint_value = value;
 			ref_type = sniff_type_e::u32;
-			ref_bytes = 4;
 		}
 
-		void setValue(uint64_t value) {
+		void set_value(uint64_t value) {
 			uint_value = value;
 			ref_type = sniff_type_e::u64;
-			ref_bytes = 8;
 		}
 
-		void setValue(float_t value) {
+		void set_value(float_t value) {
 			fp_value = value;
 			ref_type = sniff_type_e::f32;
-			ref_bytes = 4;
 		}
 
-		void setValue(double_t value) {
+		void set_value(double_t value) {
 			fp_value = value;
 			ref_type = sniff_type_e::f64;
-			ref_bytes = 8;
 		}
 
-		const std::string & asString() {
+		const std::string & as_string() {
 			prime();
 			return str_value;
 		}
 
-		const std::string & getOldStringValue() {
-			return old_str_value;
-		}
-
-		const int8_t asI8() {
+		template <class T>
+		const T as_int() {
 			prime();
-			return static_cast<int8_t>(int_value);
+			return static_cast<T>(int_value);
 		}
 
-		const int32_t asI32() {
+		template <class T>
+		const T as_uint() {
 			prime();
-			return static_cast<int32_t>(int_value);
+			return static_cast<T>(uint_value);
 		}
 
-		const int64_t asI64() {
+		template <class T>
+		const T as_float() {
 			prime();
-			return int_value;
+			return static_cast<T>(fp_value);
 		}
 
-		const uint8_t asU8() {
+		const size_t min_num_int_bytes() {
 			prime();
-			return static_cast<uint8_t>(uint_value);
-		}
-
-		const uint32_t asU32() {
-			prime();
-			return static_cast<uint32_t>(uint_value);
-		}
-
-		const uint64_t asU64() {
-			prime();
-			return uint_value;
-		}
-
-		const float_t asF32() {
-			prime();
-			return static_cast<float>(fp_value);
-		}
-
-		const double_t asF64() {
-			prime();
-			return fp_value;
-		}
-
-		uint64_t num_ref_bytes() {
-			return ref_bytes;
+			if (uint_value == 0 && str_value != "0") {
+				// 9 to exclude searching for any int types on parse failures (ie: 'find "Hello World!"')
+				return 9;
+			}
+			if (uint_value <= ((uint8_t)-1)) {
+				return 1;
+			}
+			else if (uint_value <= ((uint32_t)-1)) {
+				return 4;
+			}
+			else {
+				return 8;
+			}
 		}
 
 		sniff_value_t & operator=(const sniff_value_t & other) {
@@ -354,19 +364,18 @@ namespace w32 {
 			int_value = other.int_value;
 			uint_value = other.uint_value;
 			fp_value = other.fp_value;
-			ref_type = other.ref_type;
 			primed = other.primed;
 			return *this;
 		}
 	};
 
 	class sniff_record_set_t {
-		std::unordered_map<sniff_type_e, std::set<std::pair<size_t, uint64_t>>> locations;
+		std::unordered_map<sniff_type_e, std::set<std::tuple<sniff_type_e, size_t, uint64_t>>> locations;
 	public:
 		sniff_record_set_t() : pid(0) {};
 		sniff_record_set_t(uint64_t pid, std::vector<uint64_t> locations) : pid(pid) {};
 		uint64_t pid;
-		std::unordered_map<sniff_type_e, std::set<std::pair<size_t, uint64_t>>> & getLocations() { return locations; }
+		std::unordered_map<sniff_type_e, std::set<std::tuple<sniff_type_e, size_t, uint64_t>>> & getLocations() { return locations; }
 		void setLocation(sniff_type_e value_type, size_t pid, uint64_t location);
 
 		bool empty() const {
@@ -407,5 +416,5 @@ namespace w32 {
 	const char * get_sniff_type_str_for_type(sniff_type_e type);
 	sniff_type_e get_sniff_type_for_str(const std::string & type_str);
 	std::string get_num_system_cores();
-	void clear_open_handles();
+	void clear_open_handles(const std::vector<DWORD> pids);
 }

@@ -204,51 +204,63 @@ namespace sniffer {
 
 	class shared_memory_t {
 		size_t current_job = 0;
-		uint64_t job_spread;
+		uint64_t job_spread = 0;
 		std::mutex lock;
-		uint64_t num_threads;
-	public:
-		shared_memory_t(const sniffer_args_t & args, w32::sniff_record_set_t * sniff_record, std::vector<w32::memory_region_record_t> & records, uint64_t num_threads, uint64_t job_spread)
-			: args(args), sniff_record(sniff_record), records(records), num_threads(num_threads), job_spread(job_spread) {
+		uint64_t num_threads = 0;
+
+		void set_threaded_vectors() {
+			thread_resniffs.clear();
 			thread_resniffs.resize(num_threads);
 		}
 
-		std::vector<std::set<std::pair<size_t, uint64_t>>> thread_resniffs;
-		void resetMultiThreadState() {
+	public:
+		void update_mem_state(sniffer_args_t * args, w32::sniff_record_set_t * sniff_record, std::vector<w32::memory_region_record_t> * records, uint64_t num_threads, uint64_t job_spread) {
+			this->args = args;
+			this->sniff_record = sniff_record;
+			this->records = records;
+			this->num_threads = num_threads;
+			this->job_spread = job_spread;
+
+			set_threaded_vectors();
+		}
+
+		std::vector<std::set<std::tuple<w32::sniff_type_e, size_t, uint64_t>>> thread_resniffs;
+		void reset_thread_work_state() {
 			std::lock_guard<std::mutex> stack_lock(lock);
 			current_job = 0;
 		}
 
-		void getNextJob(jobs_indicies_t & job_index) {
+		void get_next_job(jobs_indicies_t & job_index) {
 			std::lock_guard<std::mutex> stack_lock(lock);
 			job_index.start_index = current_job;
 			current_job += job_spread;
 			job_index.end_index = current_job;
 		}
 
-		size_t getCurrentJobIndex() {
+		size_t get_current_job_index() {
 			std::lock_guard<std::mutex> stack_lock(lock);
 			return current_job;
 		}
 
-		std::vector<w32::memory_region_record_t> & records;
 		std::vector<sniffer_work_unit_t> work_units;
-		const sniffer_args_t & args;
-		w32::sniff_record_set_t * sniff_record;
+		sniffer_args_t * args = nullptr;
+		std::vector<w32::memory_region_record_t> * records = nullptr;
+		w32::sniff_record_set_t * sniff_record = nullptr;
 	};
 
 	class sniffer_context_t {
 	public:
 		sniffer_args_t args;
 		global_state_t state;
+		shared_memory_t mem;
 	};
 
 	bool init(int argc, char * argv[], sniffer_context_t & ctx);
 	bool setup_sniffer_state(sniffer_context_t & ctx);
-	void do_sync_workload(sniffer_context_t & ctx);
-	void do_async_workload(sniffer_context_t & ctx);
-	void do_post_workload(sniffer_context_t & ctx);
 	bool update_interactive_arg(sniffer_context_t & ctx);
+	void do_pre_workload(sniffer_context_t & ctx);
+	void do_workload(sniffer_context_t & ctx);
+	void do_post_workload(sniffer_context_t & ctx);
 	void report_operation_side_effects(sniffer_context_t & ctx);
 	void cleanup_sniffer_state(sniffer_context_t & ctx);
 }

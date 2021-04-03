@@ -22,43 +22,43 @@ namespace sniffer {
 	bool do_sniff_mem_replace(uint64_t pid, uint64_t mem_location, w32::sniff_type_e type, w32::sniff_value_t & value_to_set) {
 		switch (type) {
 		case w32::sniff_type_e::str: {
-			const auto value = value_to_set.asString();
+			const auto value = value_to_set.as_string();
 			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value[0], value.size());
 		} break;
 
 		case w32::sniff_type_e::i8: {
-			int8_t value = value_to_set.asI8();
+			auto value = value_to_set.as_int<int8_t>();
 			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value, 1);
 		} break;
 		case w32::sniff_type_e::i32: {
-			int32_t value = value_to_set.asI32();
+			auto value = value_to_set.as_int<int32_t>();
 			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value, 4);
 		} break;
 		case w32::sniff_type_e::i64: {
-			int64_t value = value_to_set.asI64();
+			auto value = value_to_set.as_int<int64_t>();
 			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value, 8);
 		} break;
 
 		case w32::sniff_type_e::u8: {
-			uint8_t value = value_to_set.asU8();
+			auto value = value_to_set.as_uint<uint8_t>();
 			w32::set_bytes_at_location_for_pid(pid, mem_location, &value, 8);
 		} break;
 		case w32::sniff_type_e::u32: {
-			uint32_t value = value_to_set.asU32();
+			auto value = value_to_set.as_uint<uint32_t>();
 			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value, 4);
 		} break;
 		case w32::sniff_type_e::u64: {
-			uint64_t value = value_to_set.asU64();
+			auto value = value_to_set.as_uint<uint64_t>();
 			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value, 8);
 		} break;
 
 		case w32::sniff_type_e::f32: {
-			float_t value = value_to_set.asF32();
+			auto value = value_to_set.as_float<float_t>();
 			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value, 4);
 		} break;
 
 		case w32::sniff_type_e::f64: {
-			double_t value = value_to_set.asF64();
+			auto value = value_to_set.as_float<double_t>();
 			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value, 8);
 		} break;
 
@@ -72,12 +72,12 @@ namespace sniffer {
 	}
 
 	void do_replaces(int id, shared_memory_t * sm) {
-		auto value_to_set = w32::sniff_value_t(sm->args.context());
+		auto value_to_set = w32::sniff_value_t(sm->args->context());
 
 		jobs_indicies_t indexs;
-		for (sm->getNextJob(indexs); indexs.start_index < sm->work_units.size(); sm->getNextJob(indexs)) {
+		for (sm->get_next_job(indexs); indexs.start_index < sm->work_units.size(); sm->get_next_job(indexs)) {
 			auto & work_unit = sm->work_units.at(indexs.start_index);
-			do_sniff_mem_replace(work_unit.pid, work_unit.mem_location, work_unit.type, sm->sniff_record->value);
+			do_sniff_mem_replace(work_unit.pid, work_unit.mem_location, work_unit.type, value_to_set);
 		}
 	}
 
@@ -122,28 +122,28 @@ namespace sniffer {
 	std::set<uint8_t> getFirstBytes(w32::sniff_value_t & value) {
 
 		std::set<uint8_t> first_bytes;
-		const auto str = value.asString();
+		const auto str = value.as_string();
 		first_bytes.insert(str[0]);
 
-		first_bytes.insert(value.asI8());
-		first_bytes.insert(value.asU8());
+		first_bytes.insert(value.as_uint<uint8_t>());
+		first_bytes.insert(value.as_int<int8_t>());
 
-		const auto i32 = value.asI32();
+		const auto i32 = value.as_int<int32_t>();
 		first_bytes.insert(*((uint8_t *)&i32));
 
-		const auto i64 = value.asI64();
+		const auto i64 = value.as_int<int64_t>();
 		first_bytes.insert(*(uint8_t *)&i64);
 
-		const auto u32 = value.asU32();
+		const auto u32 = value.as_int<uint32_t>();
 		first_bytes.insert(*(uint8_t *)&u32);
 
-		const auto u64 = value.asU64();
+		const auto u64 = value.as_int<uint64_t>();
 		first_bytes.insert(*(uint8_t *)&u64);
 
-		const auto f32 = value.asF32();
+		const auto f32 = value.as_float<float_t>();
 		first_bytes.insert(*(uint8_t *)&f32);
 
-		const auto f64 = value.asF32();
+		const auto f64 = value.as_float<double_t>();
 		first_bytes.insert(*(uint8_t *)&f64);
 
 		return first_bytes;
@@ -168,20 +168,21 @@ namespace sniffer {
 
 
 	void do_sniffs(int id, shared_memory_t * sm) {
-		auto sniff_pred_str = sm->args.at("spred", "eq");
-		auto sniff_type_pred_str = sm->args.at("stype");
+		auto sniff_pred_str = sm->args->at("spred", "eq");
+		auto sniff_type_pred_str = sm->args->at("stype");
 		auto sniff_type_pred = w32::get_sniff_type_for_str(sniff_type_pred_str);
-		const auto value_string_to_find = sm->args.at("ctx_param").empty() ? sm->args.arg_at_index(1) : sm->args.at("ctx_param");
+		const auto value_string_to_find = sm->args->at("ctx_param").empty() ? sm->args->arg_at_index(1) : sm->args->at("ctx_param");
 		auto value_to_find = w32::sniff_value_t(value_string_to_find.c_str());
 		auto first_bytes = getFirstBytes(value_to_find);
 		bool match = false;
 		std::vector<w32::sniff_type_e> type_matches;
 		uint8_t bound_bytes[8] = { 0 };
 		uint8_t * non_str_bytes;
+		auto min_num_int_bytes = value_to_find.min_num_int_bytes();
 		auto mem_region_copy = w32::memory_region_copy_t();
 		jobs_indicies_t indexs;
-		for (sm->getNextJob(indexs); indexs.start_index < sm->records.size(); sm->getNextJob(indexs)) {
-			const auto & region_record = sm->records[indexs.start_index];
+		for (sm->get_next_job(indexs); indexs.start_index < sm->records->size(); sm->get_next_job(indexs)) {
+			const auto & region_record = sm->records->at(indexs.start_index);
 			mem_region_copy.reset(
 				region_record.AssociatedPid,
 				region_record.BaseAddress,
@@ -210,8 +211,8 @@ namespace sniffer {
 				}
 
 				if (stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::str) && i + value_string_to_find.size() < mem_region_copy.size()) {
-					for (uint64_t j = 0; j < value_to_find.asString().size(); ++j) {
-						match = mem_region_copy[i + j] == value_to_find.asString().at(j);
+					for (uint64_t j = 0; j < value_to_find.as_string().size(); ++j) {
+						match = mem_region_copy[i + j] == value_to_find.as_string().at(j);
 						if (!match) break;
 					}
 
@@ -220,71 +221,71 @@ namespace sniffer {
 					}
 				}
 
-				if (stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::u8) && value_to_find.asU8() != 0 && value_to_find.num_ref_bytes() == 1) {
-					match = sniff_cmp_i(sniff_pred_str, *non_str_bytes, value_to_find.asU8());
+				if (min_num_int_bytes <= 1 && stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::u8)) {
+					match = sniff_cmp_i(sniff_pred_str, *non_str_bytes, value_to_find.as_uint<uint8_t>());
 
 					if (match) {
 						sm->sniff_record->setLocation(w32::sniff_type_e::u8, region_record.AssociatedPid, location);
 					}
 				}
 
-				if (stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::u32) && value_to_find.asU32() != 0 && value_to_find.num_ref_bytes() <= 4 && i + 3 < mem_region_copy.size()) {
+				if (min_num_int_bytes <= 4 && stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::u32)) {
 					uint32_t val = *(uint32_t *)non_str_bytes;
-					match = sniff_cmp_i(sniff_pred_str, val, value_to_find.asU32());
+					match = sniff_cmp_i(sniff_pred_str, val, value_to_find.as_uint<uint32_t>());
 
 					if (match) {
 						sm->sniff_record->setLocation(w32::sniff_type_e::u32, region_record.AssociatedPid, location);
 					}
 				}
 
-				if (stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::u64) && value_to_find.asU64() != 0 && value_to_find.num_ref_bytes() <= 8 && i + 7 < mem_region_copy.size()) {
+				if (min_num_int_bytes <= 8 && stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::u64)) {
 					uint64_t val = *(uint64_t *)non_str_bytes;
-					match = sniff_cmp_i(sniff_pred_str, val, value_to_find.asU64());
+					match = sniff_cmp_i(sniff_pred_str, val, value_to_find.as_uint<uint64_t>());
 
 					if (match) {
 						sm->sniff_record->setLocation(w32::sniff_type_e::u64, region_record.AssociatedPid, location);
 					}
 				}
 
-				if (stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::i8) && value_to_find.asI8() != 0 && value_to_find.num_ref_bytes() == 1) {
+				if (min_num_int_bytes <= 1 && stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::i8)) {
 					int8_t val = *(int8_t *)non_str_bytes;
-					match = sniff_cmp_i(sniff_pred_str, val, value_to_find.asI8());
+					match = sniff_cmp_i(sniff_pred_str, val, value_to_find.as_int<int8_t>());
 
 					if (match) {
 						sm->sniff_record->setLocation(w32::sniff_type_e::i8, region_record.AssociatedPid, location);
 					}
 				}
 
-				if (stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::i32) && value_to_find.asI32() != 0 && value_to_find.num_ref_bytes() <= 4 && i + 3 < mem_region_copy.size()) {
+				if (min_num_int_bytes <= 4 && stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::i32)) {
 					int32_t val = *(int32_t *)non_str_bytes;
-					match = sniff_cmp_i(sniff_pred_str, val, value_to_find.asI32());
+					match = sniff_cmp_i(sniff_pred_str, val, value_to_find.as_int<int32_t>());
 
 					if (match) {
 						sm->sniff_record->setLocation(w32::sniff_type_e::i32, region_record.AssociatedPid, location);
 					}
 				}
 
-				if (stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::i64) && value_to_find.asI64() != 0 && value_to_find.num_ref_bytes() <= 8 && i + 7 < mem_region_copy.size()) {
+				if (min_num_int_bytes <= 8 && stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::i64)) {
 					int64_t val = *(int64_t *)non_str_bytes;
-					match = sniff_cmp_i(sniff_pred_str, val, value_to_find.asI64());
+					match = sniff_cmp_i(sniff_pred_str, val, value_to_find.as_int<int64_t>());
 
 					if (match) {
 						sm->sniff_record->setLocation(w32::sniff_type_e::i64, region_record.AssociatedPid, location);
 					}
 				}
 
-				if (stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::f32) && value_to_find.asF32() != 0.0f && value_to_find.num_ref_bytes() <= 8 && i + 3 < mem_region_copy.size()) {
+				if (stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::f32)) {
 					float_t val = *(float_t *)non_str_bytes;
-					match = sniff_cmp_f(sniff_pred_str, val, value_to_find.asF32());
+					match = sniff_cmp_f(sniff_pred_str, val, value_to_find.as_float<float_t>());
 
 					if (match) {
 						sm->sniff_record->setLocation(w32::sniff_type_e::f32, region_record.AssociatedPid, location);
 					}
 				}
 
-				if (stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::f64) && value_to_find.asF64() != 0.0 && value_to_find.num_ref_bytes() <= 8 && i + 7 < mem_region_copy.size()) {
+				if (stype_is_type_or_none(sniff_type_pred, w32::sniff_type_e::f64)) {
 					double_t val = *(double_t *)non_str_bytes;
-					match = sniff_cmp_f(sniff_pred_str, val, value_to_find.asF64());
+					match = sniff_cmp_f(sniff_pred_str, val, value_to_find.as_float<double_t>());
 
 					if (match) {
 						sm->sniff_record->setLocation(w32::sniff_type_e::f64, region_record.AssociatedPid, location);
@@ -296,15 +297,15 @@ namespace sniffer {
 
 	// TODO: Fix update
 	void do_resniffs(int id, shared_memory_t * sm) {
-		auto is_update_resniff = sm->args.action_is(sniffer_cmd_e::update);
-		auto resniff_pred_str = sm->args.at("spred", "eq");
-		auto resniff_type_pred_str = sm->args.at("stype");
+		auto is_update_resniff = sm->args->action_is(sniffer_cmd_e::update);
+		auto resniff_pred_str = sm->args->at("spred", "eq");
+		auto resniff_type_pred_str = sm->args->at("stype");
 		auto resniff_type_pred = w32::get_sniff_type_for_str(resniff_type_pred_str);
-		auto resniff_value_pred_str = sm->args.context();
+		auto resniff_value_pred_str = sm->args->context();
 		auto resniff_value_pred = w32::sniff_value_t(resniff_value_pred_str.c_str());
 		auto mem_region_copy = w32::memory_region_copy_t();
 		jobs_indicies_t indexs;
-		for (sm->getNextJob(indexs); indexs.start_index < sm->work_units.size(); sm->getNextJob(indexs)) {
+		for (sm->get_next_job(indexs); indexs.start_index < sm->work_units.size(); sm->get_next_job(indexs)) {
 			for (uint64_t i = indexs.start_index; i < indexs.end_index && i < sm->work_units.size(); ++i) {
 				auto & work_unit = sm->work_units.at(i);
 				bool match = false;
@@ -312,21 +313,21 @@ namespace sniffer {
 				mem_region_copy.reset(
 					(w32::DWORD)work_unit.pid,
 					(w32::LPVOID)work_unit.mem_location,
-					work_unit.type == w32::sniff_type_e::str ? sm->sniff_record->value.asString().size() : 8,
+					work_unit.type == w32::sniff_type_e::str ? sm->sniff_record->value.as_string().size() : 8,
 					false
 				);
 				if (!is_update_resniff && resniff_type_pred != w32::sniff_type_e::unknown) {
 					if (work_unit.type != resniff_type_pred) {
-						sm->thread_resniffs[id].insert(std::make_pair(work_unit.pid, work_unit.mem_location));
+						sm->thread_resniffs[id].insert(std::make_tuple(work_unit.type, work_unit.pid, work_unit.mem_location));
 						continue;
 					}
 				}
 
 				if (work_unit.type == w32::sniff_type_e::str) {
 					const auto cmp_str =
-						resniff_value_pred_str.empty() ? sm->sniff_record->value.asString() : resniff_value_pred.asString();
+						resniff_value_pred_str.empty() ? sm->sniff_record->value.as_string() : resniff_value_pred.as_string();
 
-					for (uint64_t j = 0; j < sm->sniff_record->value.asString().size(); ++j) {
+					for (uint64_t j = 0; j < sm->sniff_record->value.as_string().size(); ++j) {
 						match = sniff_cmp_i(resniff_pred_str, mem_region_copy[j], cmp_str.at(j));
 
 						if (!match) break;
@@ -336,70 +337,70 @@ namespace sniffer {
 					int8_t val = *(int8_t *)&mem_region_copy[0];
 
 					if (resniff_value_pred_str.empty()) {
-						match = sniff_cmp_i(resniff_pred_str, val, sm->sniff_record->value.asI8());
+						match = sniff_cmp_i(resniff_pred_str, val, sm->sniff_record->value.as_int<int8_t>());
 					}
 					else {
-						match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asI8());
+						match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.as_int<int8_t>());
 					}
 				}
 				else if (work_unit.type == w32::sniff_type_e::i32) {
 					int32_t val = *(int32_t *)&mem_region_copy[0];
 
 					if (resniff_value_pred_str.empty()) {
-						match = sniff_cmp_i(resniff_pred_str, val, sm->sniff_record->value.asI32());
+						match = sniff_cmp_i(resniff_pred_str, val, sm->sniff_record->value.as_int<int32_t>());
 					}
 					else {
-						match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asI32());
+						match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.as_int<int32_t>());
 					}
 				}
 				else if (work_unit.type == w32::sniff_type_e::i64) {
 					int64_t val = *(int64_t *)&mem_region_copy[0];
 
 					if (resniff_value_pred_str.empty()) {
-						match = sniff_cmp_i(resniff_pred_str, val, sm->sniff_record->value.asI64());
+						match = sniff_cmp_i(resniff_pred_str, val, sm->sniff_record->value.as_int<int64_t>());
 					}
 					else {
-						match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asI64());
+						match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.as_int<int64_t>());
 					}
 				}
 				else if (work_unit.type == w32::sniff_type_e::u8) {
 					uint8_t val = *(uint8_t *)&mem_region_copy[0];
 
 					if (resniff_value_pred_str.empty()) {
-						match = sniff_cmp_i(resniff_pred_str, val, sm->sniff_record->value.asU8());
+						match = sniff_cmp_i(resniff_pred_str, val, sm->sniff_record->value.as_uint<uint8_t>());
 					}
 					else {
-						match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asU8());
+						match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.as_uint<uint8_t>());
 					}
 				}
 				else if (work_unit.type == w32::sniff_type_e::u32) {
 					uint32_t val = *(uint32_t *)&mem_region_copy[0];
 
 					if (resniff_value_pred_str.empty()) {
-						match = sniff_cmp_i(resniff_pred_str, val, sm->sniff_record->value.asU32());
+						match = sniff_cmp_i(resniff_pred_str, val, sm->sniff_record->value.as_uint<uint32_t>());
 					}
 					else {
-						match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asU32());
+						match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.as_uint<uint32_t>());
 					}
 				}
 				else if (work_unit.type == w32::sniff_type_e::u64) {
 					uint64_t val = *(uint64_t *)&mem_region_copy[0];
 
 					if (resniff_value_pred_str.empty()) {
-						match = sniff_cmp_i(resniff_pred_str, val, sm->sniff_record->value.asU64());
+						match = sniff_cmp_i(resniff_pred_str, val, sm->sniff_record->value.as_uint<uint64_t>());
 					}
 					else {
-						match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.asU64());
+						match = sniff_cmp_i(resniff_pred_str, val, resniff_value_pred.as_uint<uint64_t>());
 					}
 				}
 				else if (work_unit.type == w32::sniff_type_e::f32) {
 					float_t val = *(float_t *)&mem_region_copy[0];
 
 					if (resniff_value_pred_str.empty()) {
-						match = sniff_cmp_f(resniff_pred_str, val, sm->sniff_record->value.asF32());
+						match = sniff_cmp_f(resniff_pred_str, val, sm->sniff_record->value.as_float<float_t>());
 					}
 					else {
-						match = sniff_cmp_f(resniff_pred_str, val, resniff_value_pred.asF32());
+						match = sniff_cmp_f(resniff_pred_str, val, resniff_value_pred.as_float<float_t>());
 					}
 
 				}
@@ -407,15 +408,15 @@ namespace sniffer {
 					double_t val = *(double_t *)&mem_region_copy[0];
 
 					if (resniff_value_pred_str.empty()) {
-						match = sniff_cmp_f(resniff_pred_str, val, sm->sniff_record->value.asF64());
+						match = sniff_cmp_f(resniff_pred_str, val, sm->sniff_record->value.as_float<double_t>());
 					}
 					else {
-						match = sniff_cmp_f(resniff_pred_str, val, resniff_value_pred.asF64());
+						match = sniff_cmp_f(resniff_pred_str, val, resniff_value_pred.as_float<double_t>());
 					}
 				}
 
 				if (!is_update_resniff && !match) {
-					sm->thread_resniffs[id].insert(std::make_pair(work_unit.pid, work_unit.mem_location));
+					sm->thread_resniffs[id].insert(std::make_tuple(work_unit.type, work_unit.pid, work_unit.mem_location));
 				}
 			}
 		}
@@ -451,10 +452,10 @@ namespace sniffer {
 		return result;
 	}
 
-	std::vector<void (*)(int, shared_memory_t *)> get_actions_for_args_and_shared_mem(const sniffer_args_t & args, const shared_memory_t & mem) {
+	std::vector<void (*)(int, shared_memory_t *)> get_actions_for_ctx(sniffer_context_t & ctx) {
 		auto result = std::vector<void (*)(int, shared_memory_t *)>();
-		if (args.action_is(sniffer_cmd_e::find)) {
-			if (args.context().empty()) {
+		if (ctx.args.action_is(sniffer_cmd_e::find)) {
+			if (ctx.args.context().empty()) {
 				std::cout << "Expected token after find (ie: 'find 450') to be provided when doing a find operation" << std::endl;
 				result.clear();
 				return result;
@@ -462,14 +463,14 @@ namespace sniffer {
 
 			result.push_back(do_sniffs);
 		}
-		else if (args.action_is(sniffer_cmd_e::set)) {
-			if (args.context().empty()) {
+		else if (ctx.args.action_is(sniffer_cmd_e::set)) {
+			if (ctx.args.context().empty()) {
 				std::cout << "Expected token after set (id: set 1337) to be provided when using action set" << std::endl;
 				result.clear();
 				return result;
 			}
 
-			if (mem.sniff_record->empty()) {
+			if (ctx.state.sniffs->empty()) {
 				std::cout << "Have no sniffs to replace - run 'find' to find some memory locations" << std::endl;
 				result.clear();
 				return result;
@@ -477,8 +478,8 @@ namespace sniffer {
 
 			result.push_back(do_replaces);
 		}
-		else if (args.action_is(sniffer_cmd_e::filter) || args.action_is(sniffer_cmd_e::update)) {
-			if (mem.sniff_record->empty()) {
+		else if (ctx.args.action_is(sniffer_cmd_e::filter) || ctx.args.action_is(sniffer_cmd_e::update)) {
+			if (ctx.state.sniffs->empty()) {
 				std::cout << "Expected to find cached sniffs when using action filter/update - run 'find' to get records" << std::endl;
 				result.clear();
 				return result;
@@ -490,10 +491,10 @@ namespace sniffer {
 		return result;
 	}
 
-	std::vector<w32::sniff_record_set_t> filter_sniffs(sniffer_context_t & ctx, shared_memory_t & mem) {
+	std::vector<w32::sniff_record_set_t> filter_sniffs(sniffer_context_t & ctx) {
 		std::vector<w32::sniff_record_set_t> result;
-		std::set<std::pair<size_t, uint64_t>> sniffs_to_exclude;
-		for (const auto & resniff : mem.thread_resniffs) {
+		std::set<std::tuple<w32::sniff_type_e, size_t, uint64_t>> sniffs_to_exclude;
+		for (const auto & resniff : ctx.mem.thread_resniffs) {
 			for (const auto index_to_exclude : resniff) {
 				sniffs_to_exclude.insert(index_to_exclude);
 			}
@@ -517,7 +518,6 @@ namespace sniffer {
 	void dump_sniffs(w32::sniff_record_set_t * record, uint32_t offset = 0) {
 		uint32_t i = 0;
 		bool has_offset_output = false;
-		record->value.updateStringValue();
 		for (auto & type_to_location : record->getLocations()) {
 			for (const auto mem_location : type_to_location.second) {
 
@@ -531,12 +531,8 @@ namespace sniffer {
 				}
 
 				std::cout << "\t SniffRecord (id=" << i - 1 << ", pid=" << record->pid << ", location=";
-				std::cout << "0x" << std::setw(16) << std::setfill('0') << std::hex << mem_location.second << std::dec;
-				std::cout << ", type=" << w32::get_sniff_type_str_for_type(type_to_location.first) << ", value=" << record->value.asString();
-
-				if (!record->value.getOldStringValue().empty()) {
-					std::cout << ", old_value=" << record->value.getOldStringValue();
-				}
+				std::cout << "0x" << std::setw(16) << std::setfill('0') << std::hex << std::get<1>(mem_location) << std::dec;
+				std::cout << ", type=" << w32::get_sniff_type_str_for_type(type_to_location.first) << ", value=" << record->value.as_typed_str(type_to_location.first);
 				std::cout << ")" << std::endl;
 
 				if (i - offset == 20) {
@@ -654,7 +650,7 @@ namespace sniffer {
 				for (auto & sniff_record_to_sniff_value : ctx->state.repeat_replace) {
 					for (const auto & type_to_locations : sniff_record_to_sniff_value.first.getLocations()) {
 						for (const auto & pid_and_mem_location : type_to_locations.second) {
-							if (do_sniff_mem_replace(pid_and_mem_location.first, pid_and_mem_location.second, type_to_locations.first, sniff_record_to_sniff_value.second)) {
+							if (do_sniff_mem_replace(std::get<2>(pid_and_mem_location), std::get<1>(pid_and_mem_location), type_to_locations.first, sniff_record_to_sniff_value.second)) {
 								// TODO: Update value sniff_record_to_sniff_value.second ?
 							}
 						}
@@ -711,7 +707,7 @@ namespace sniffer {
 		return !ctx.args.action_is(sniffer_cmd_e::quit);
 	}
 
-	void do_sync_workload(sniffer_context_t & ctx) {
+	void do_pre_workload(sniffer_context_t & ctx) {
 		if (ctx.args.action_is(sniffer_cmd_e::undo)) {
 			/* TODO: Refactor undo
 			if (sniffs_eliminated[current_sniff_context].empty()) {
@@ -793,6 +789,7 @@ namespace sniffer {
 			const auto token_to_search_for = ctx.args.context();
 
 			std::cout << "Searching attached process for " << token_to_search_for << " ..." << std::endl;
+			ctx.state.sniffs->value.set_value(token_to_search_for);
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::remove)) {
 			try {
@@ -836,12 +833,12 @@ namespace sniffer {
 					for (auto & record_to_value : ctx.state.repeat_replace) {
 						for (auto & type_to_locations : record_to_value.first.getLocations()) {
 							for (auto & mem_location : type_to_locations.second) {
-								record_to_value.second.updateStringValue();
+								record_to_value.second.update_string_value();
 								std::cout
 									<< "\t RepeatReplace (id=" << (i++)
 									<< ", type=" << w32::get_sniff_type_str_for_type(type_to_locations.first)
-									<< ", location=" << std::setw(16) << std::hex << mem_location.second << std::dec
-									<< ", value_to_set=" << record_to_value.second.asString() << ")" << std::endl;
+									<< ", location=" << std::setw(16) << std::hex << std::get<2>(mem_location) << std::dec
+									<< ", value_to_set=" << record_to_value.second.as_string() << ")" << std::endl;
 							}
 						}
 					}
@@ -957,17 +954,16 @@ namespace sniffer {
 		}
 	}
 
-	void create_sniff_work_units_for_context_in_mem(sniffer_context_t & ctx, shared_memory_t & mem) {
+	void create_sniff_work_units_for_context(sniffer_context_t & ctx) {
+		ctx.mem.work_units.clear();
 		for (auto & sniff_type_to_sniffs : ctx.state.sniffs->getLocations()) {
 			for (const auto & mem_location : sniff_type_to_sniffs.second) {
-				mem.work_units.emplace_back(mem_location.first, mem_location.second, sniff_type_to_sniffs.first);
+				ctx.mem.work_units.emplace_back(std::get<1>(mem_location), std::get<2>(mem_location), sniff_type_to_sniffs.first);
 			}
 		}
-
 	}
 
-	void do_async_workload(sniffer_context_t & ctx) {
-
+	void do_workload(sniffer_context_t & ctx) {
 		const auto pids_to_consider = w32::get_all_pids_for_process_name(ctx.state.executable_to_consider_wstring);
 		auto records = std::vector<w32::memory_region_record_t>();
 		for (auto pid : pids_to_consider) {
@@ -977,22 +973,22 @@ namespace sniffer {
 
 		split_large_records(records);
 
-		shared_memory_t mem(ctx.args, ctx.state.sniffs, records, ctx.state.num_threads, 1);
+		ctx.mem.update_mem_state(&ctx.args, ctx.state.sniffs, &records, ctx.state.num_threads, 1);
 		if (ctx.args.action_is_one({ sniffer_cmd_e::set, sniffer_cmd_e::update, sniffer_cmd_e::filter })) {
-			create_sniff_work_units_for_context_in_mem(ctx, mem);
+			create_sniff_work_units_for_context(ctx);
 		}
-		const auto actions = get_actions_for_args_and_shared_mem(ctx.args, mem);
+		const auto actions = get_actions_for_ctx(ctx);
 		profile_timer_t timer(__FUNCTION__);
 		for (const auto action : actions) {
 			std::vector<std::thread> threads;
 			for (uint32_t i = 0; i < ctx.state.num_threads; ++i) {
-				threads.push_back(std::thread(action, i, &mem));
+				threads.push_back(std::thread(action, i, &ctx.mem));
 			}
 
 			auto max_jobs = ctx.args.action_is(sniffer_cmd_e::find) ? records.size() : ctx.state.sniffs->size();
 
-			while (mem.getCurrentJobIndex() < max_jobs + 1) {
-				std::cout << "\r\t Starting " << ctx.args.action() << " job " << mem.getCurrentJobIndex() << " / " << max_jobs << " ... ";
+			while (ctx.mem.get_current_job_index() < max_jobs + 1) {
+				std::cout << "\r\t Starting " << ctx.args.action() << " job " << ctx.mem.get_current_job_index() << " / " << max_jobs << " ... ";
 				std::this_thread::sleep_for(std::chrono::milliseconds(250));
 			}
 			std::cout << "\r\t Starting " << ctx.args.action() << " job " << max_jobs << " / " << max_jobs << " ... done" << std::endl;;
@@ -1004,18 +1000,21 @@ namespace sniffer {
 			}
 			std::cout << " done" << std::endl;
 
-			mem.resetMultiThreadState();
+			ctx.mem.reset_thread_work_state();
 		}
 	}
 
 	void do_post_workload(sniffer_context_t & ctx)
 	{
 		// TODO: Filter results
+		if (ctx.args.action_is(sniffer_cmd_e::filter)) {
+			filter_sniffs(ctx);
+		}
 	}
 
 	void report_operation_side_effects(sniffer_context_t & ctx) {
 		if (ctx.args.action_is(sniffer_cmd_e::set)) {
-			std::cout << "Found and set " << ctx.state.sniffs->size() << "elements" << std::endl;
+			std::cout << "Found and set " << ctx.state.sniffs->size() << " sniff records" << std::endl;
 			dump_sniffs(ctx.state.sniffs);
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::find)) {
@@ -1023,7 +1022,11 @@ namespace sniffer {
 			dump_sniffs(ctx.state.sniffs);
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::filter)) {
-			std::cout << "Filtered " << 0 << " records which ! " << ctx.args.at("spred", "eq") << " " << ctx.args.at("ctx_param", "the original value") << ". Remaining records: " << std::endl;
+			size_t filter_count = 0;
+			for (const auto & thread_resniff : ctx.mem.thread_resniffs) {
+				filter_count += thread_resniff.size();
+			}
+			std::cout << "Filtered " << filter_count << " records which ! " << ctx.args.at("spred", "eq") << " " << ctx.args.at("ctx_param", "the original value") << ". Remaining records: " << std::endl;
 			dump_sniffs(ctx.state.sniffs);
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::list)) {
@@ -1066,7 +1069,7 @@ namespace sniffer {
 		auto currernt_context = ctx.state.context_to_sniffs[ctx.state.current_context];
 		ctx.state.sniffs = &ctx.state.context_to_sniffs.at(ctx.state.current_context);
 		ctx.state.is_interactive = ctx.args.action() == "interactive";
-		ctx.state.num_threads = 1;// std::stoul(ctx.args.at("j", w32::get_num_system_cores()));
+		ctx.state.num_threads = std::stoul(ctx.args.at("j", w32::get_num_system_cores()));
 
 		return true;
 	}
@@ -1074,7 +1077,6 @@ namespace sniffer {
 	void cleanup_sniffer_state(sniffer_context_t & ctx) {
 		ctx.state.replace_thread_is_running = false;
 		ctx.state.replace_thread.join();
-
-		//w32::clear_open_handles(ctx.state.pi);
+		w32::clear_open_handles(w32::get_all_pids_for_process_name(ctx.state.executable_to_consider_wstring));
 	}
 }

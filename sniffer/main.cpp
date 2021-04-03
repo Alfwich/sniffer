@@ -23,8 +23,8 @@ int main(int argc, char * argv[]) {
 				break;
 			}
 		}
-		sniffer::do_sync_workload(main);
-		sniffer::do_async_workload(main);
+		sniffer::do_pre_workload(main);
+		sniffer::do_workload(main);
 		sniffer::do_post_workload(main);
 		sniffer::report_operation_side_effects(main);
 	} while (main.state.is_interactive);

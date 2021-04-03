@@ -386,7 +386,7 @@ namespace w32 {
 	std::mutex sniff_record_set_location_mutex;
 	void sniff_record_set_t::setLocation(sniff_type_e value_type, size_t pid, uint64_t location) {
 		std::lock_guard<std::mutex> lock(sniff_record_set_location_mutex);
-		locations[value_type].insert(std::make_pair(pid, location));
+		locations[value_type].insert(std::make_tuple(value_type, pid, location));
 	}
 
 }
