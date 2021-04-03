@@ -1,4 +1,5 @@
 #pragma once
+#pragma once
 
 #include <vector>
 #include <string>
@@ -8,11 +9,21 @@
 
 #include "w32_api.h"
 
+#include "sniffer_cmds.h"
+
 namespace {
 	const char * default_str = "";
 }
 
 namespace sniffer {
+
+	class sniffer_work_unit_t {
+	public:
+		sniffer_work_unit_t(size_t pid, uint64_t mem_location, w32::sniff_type_e type) : pid(pid), mem_location(mem_location), type(type) {}
+		const size_t pid;
+		const uint64_t mem_location;
+		const w32::sniff_type_e type;
+	};
 
 	class sniffer_args_t {
 		std::unordered_map<std::string, std::string> arg_map;
@@ -44,12 +55,12 @@ namespace sniffer {
 			return true;
 		}
 
-		void updateArgMapAndArgWords(std::unordered_map<std::string, std::string> & new_arg_map, std::vector<std::string> & new_arg_words) {
+		void update_arg_map_and_arg_words(std::unordered_map<std::string, std::string> & new_arg_map, std::vector<std::string> & new_arg_words) {
 			arg_map = new_arg_map;
 			arg_words = new_arg_words;
 		}
 
-		std::string getArg(const char * key, const std::string & def = default_str) const {
+		std::string get_arg(const char * key, const std::string & def = default_str) const {
 			if (arg_map.count(key) > 0) {
 				return arg_map.at(key);
 			}
@@ -58,11 +69,11 @@ namespace sniffer {
 		}
 
 		std::string at(std::vector<std::string> args) const {
-			return getFirstArg(args);
+			return first_arg(args);
 		}
 
 		std::string at(const char * key) const {
-			return getArg(key);
+			return get_arg(key);
 		}
 
 		std::string at(const char * key, const char * def) const {
@@ -84,14 +95,14 @@ namespace sniffer {
 		}
 
 		size_t count(std::vector<std::string> args) const {
-			return getFirstArg(args).size() > 0;
+			return first_arg(args).size() > 0;
 		}
 
 		bool empty() {
 			return size() == 0;
 		}
 
-		std::string getFirstArg(std::vector<std::string> strs, const std::string & def = default_str) const {
+		std::string first_arg(std::vector<std::string> strs, const std::string & def = default_str) const {
 			for (const auto key : strs) {
 				if (arg_map.count(key) > 0) {
 					return arg_map.at(key);
@@ -101,7 +112,7 @@ namespace sniffer {
 			return default_str;
 		}
 
-		std::string getArgAtIndex(uint32_t index) const {
+		std::string arg_at_index(uint32_t index) const {
 			if (index < arg_words.size()) {
 				return arg_words.at(index);
 			}
@@ -109,13 +120,27 @@ namespace sniffer {
 			return default_str;
 		}
 
-		bool actionIs(std::string action) const {
-			return actionIsOneOf({ action });
+		bool action_is(std::string action) const {
+			return action_is_one({ action });
 		}
 
-		bool actionIsOneOf(std::vector<std::string> actions) const {
+		bool action_is(sniffer_cmd_e cmd) const {
+			return action_is_one(sniffer_cmd_to_str.at(cmd));
+		}
+
+		bool action_is_one(const std::vector<sniffer_cmd_e> actions) const {
 			bool result = false;
-			const auto action_string = getAction();
+
+			for (const auto & action : actions) {
+				result = result || action_is(action);
+			}
+
+			return result;
+		}
+
+		bool action_is_one(const std::vector<std::string> actions) const {
+			bool result = false;
+			const auto action_string = action();
 
 			for (const auto & action : actions) {
 				result = result || action == action_string;
@@ -124,13 +149,17 @@ namespace sniffer {
 			return result;
 		}
 
-		bool contextIs(std::string context) const {
-			return contextIsOneOf({ context });
+		bool context_is(std::string context) const {
+			return context_is_one({ context });
 		}
 
-		bool contextIsOneOf(std::vector<std::string> contexts) const {
+		bool context_is(sniffer_cmd_e ctx_cmd) const {
+			return context_is_one(sniffer_cmd_to_str.at(ctx_cmd));
+		}
+
+		bool context_is_one(const std::vector<std::string> contexts) const {
 			bool result = false;
-			const auto context_string = getContext();
+			const auto context_string = context();
 
 			for (const auto & context : contexts) {
 				result = result || context == context_string;
@@ -139,12 +168,12 @@ namespace sniffer {
 			return result;
 		}
 
-		std::string getAction() const {
+		std::string action() const {
 			return at("action");
 		}
 
-		std::string getContext(std::string def = "") const {
-			const auto result = at("ctx_param", getArgAtIndex(1));
+		std::string context(std::string def = "") const {
+			const auto result = at("ctx_param", arg_at_index(1));
 			return result.empty() ? def : result;
 		}
 	};
@@ -167,6 +196,10 @@ namespace sniffer {
 		w32::sniff_record_set_t * sniffs;
 		bool is_interactive;
 		uint64_t num_threads;
+
+		std::mutex replace_thread_mutex;
+		std::vector<std::pair<w32::sniff_record_set_t, w32::sniff_value_t>> repeat_replace;
+		bool replace_thread_is_running = true;
 	};
 
 	class shared_memory_t {
@@ -180,7 +213,7 @@ namespace sniffer {
 			thread_resniffs.resize(num_threads);
 		}
 
-		std::vector<std::set<size_t>> thread_resniffs;
+		std::vector<std::set<std::pair<size_t, uint64_t>>> thread_resniffs;
 		void resetMultiThreadState() {
 			std::lock_guard<std::mutex> stack_lock(lock);
 			current_job = 0;
@@ -199,6 +232,7 @@ namespace sniffer {
 		}
 
 		std::vector<w32::memory_region_record_t> & records;
+		std::vector<sniffer_work_unit_t> work_units;
 		const sniffer_args_t & args;
 		w32::sniff_record_set_t * sniff_record;
 	};

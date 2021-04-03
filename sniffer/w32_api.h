@@ -361,13 +361,13 @@ namespace w32 {
 	};
 
 	class sniff_record_set_t {
-		std::unordered_map<sniff_type_e, std::set<uint64_t>> locations;
+		std::unordered_map<sniff_type_e, std::set<std::pair<size_t, uint64_t>>> locations;
 	public:
 		sniff_record_set_t() : pid(0) {};
 		sniff_record_set_t(uint64_t pid, std::vector<uint64_t> locations) : pid(pid) {};
 		uint64_t pid;
-		const std::unordered_map<sniff_type_e, std::set<uint64_t>> & getLocations() { return locations; }
-		void setLocation(sniff_type_e value_type, uint64_t value);
+		std::unordered_map<sniff_type_e, std::set<std::pair<size_t, uint64_t>>> & getLocations() { return locations; }
+		void setLocation(sniff_type_e value_type, size_t pid, uint64_t location);
 
 		bool empty() const {
 			for (const auto type_to_locations : locations) {

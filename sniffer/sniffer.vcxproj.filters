@@ -41,5 +41,8 @@
     <ClInclude Include="sniffer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="sniffer_cmds.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

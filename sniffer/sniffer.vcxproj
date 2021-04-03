@@ -147,6 +147,7 @@
     <ClInclude Include="params.h" />
     <ClInclude Include="profile_timer.h" />
     <ClInclude Include="sniffer.h" />
+    <ClInclude Include="sniffer_cmds.h" />
     <ClInclude Include="utils.h" />
     <ClInclude Include="w32_api.h" />
   </ItemGroup>

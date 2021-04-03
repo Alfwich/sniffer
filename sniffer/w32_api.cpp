@@ -29,11 +29,13 @@ namespace w32 {
 		return open_handles.at(pid);
 	}
 
-	void clear_open_handles() {
-		for (const auto & handle : open_handles) {
-			CloseHandle(handle.second);
+	void clear_open_handles(const std::vector<DWORD> pids) {
+		for (auto pid : pids) {
+			if (open_handles.count(pid) != 0) {
+				CloseHandle(open_handles.at(pid));
+				open_handles.erase(pid);
+			}
 		}
-		open_handles.clear();
 	}
 
 	BOOL set_privilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege) {
@@ -382,9 +384,9 @@ namespace w32 {
 	}
 
 	std::mutex sniff_record_set_location_mutex;
-	void sniff_record_set_t::setLocation(sniff_type_e value_type, uint64_t value) {
+	void sniff_record_set_t::setLocation(sniff_type_e value_type, size_t pid, uint64_t location) {
 		std::lock_guard<std::mutex> lock(sniff_record_set_location_mutex);
-		locations[value_type].insert(value);
+		locations[value_type].insert(std::make_pair(pid, location));
 	}
 
 }
