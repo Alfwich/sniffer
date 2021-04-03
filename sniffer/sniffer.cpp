@@ -902,35 +902,20 @@ namespace sniffer {
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::take) && !ctx.args.context().empty()) {
 			try {
-				/*
 				const auto ids = get_index_range_from_argument(ctx.args.context());
 				if (ids.is_good) {
 					if (ids.is_multiple) {
 						std::cout << "Taking sniff set in range " << ids.min_index << " to " << ids.max_index << std::endl;
-						uint64_t i = 0;
-						auto & locations = ctx.state.sniffs->get_locations();
-						for (auto & type_to_sniffs : ctx.state.sniffs->get_locations()) {
-							for (auto & sniff : type_to_sniffs.second) {
-								if (i < ids.min_index && i > ids.max_index) {
-								}
-								++i;
-							}
-						}
-						const auto max_index = ids.max_index >= ctx.state.sniffs->size() ? ctx.state.sniffs->size() : ids.max_index + 1;
-						const auto new_sniffs = std::vector<w32::sniff_record_set_t>(ctx.state.sniffs->getubegin() + ids.min_index, sniffs->begin() + max_index);
-						sniffs->erase(sniffs->begin() + ids.min_index, sniffs->begin() + max_index);
-						*sniffs = new_sniffs;
-
 					}
 					else {
 						std::cout << "Taking sniff value at index " << ids.min_index << std::endl;
-						const auto new_sniff = std::vector<win_api::SniffRecordSet>{ sniffs->at(ids.min_index) };
-						sniffs->erase(sniffs->begin() + ids.min_index);
-						sniffs_eliminated[current_sniff_context] = *sniffs;
-						*sniffs = new_sniff;
 					}
+
+					indicies_t indicies;
+					indicies.start_index = ids.min_index;
+					indicies.end_index = ids.max_index;
+					ctx.state.sniffs->remove(indicies, false);
 				}
-				*/
 			}
 			catch (...) {
 				/* NO OP */

@@ -408,11 +408,12 @@ namespace w32 {
 			}
 		}
 
-		void remove(indicies_t & indicies_range) {
+		void remove(indicies_t & indicies_range, bool inclusive = true) {
 			uint64_t i = 0;
 			for (auto & type_to_locations : locations) {
 				for (auto it = type_to_locations.second.begin(); it != type_to_locations.second.end();) {
-					if (i >= indicies_range.start_index && i <= indicies_range.end_index) {
+					auto in_range = i >= indicies_range.start_index && i <= indicies_range.end_index;
+					if ((inclusive && in_range) || (!inclusive && !in_range)) {
 						it = type_to_locations.second.erase(it);
 					}
 					else {
