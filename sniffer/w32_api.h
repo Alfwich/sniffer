@@ -11,7 +11,8 @@
 #include <mutex>
 #include <thread>
 
-#include "Params.h"
+#include "params.h"
+#include "utils.h"
 
 namespace w32 {
 
@@ -370,12 +371,13 @@ namespace w32 {
 	};
 
 	class sniff_record_set_t {
+		std::unordered_map<sniff_type_e, std::set<std::tuple<sniff_type_e, size_t, uint64_t>>> undo_locations;
 		std::unordered_map<sniff_type_e, std::set<std::tuple<sniff_type_e, size_t, uint64_t>>> locations;
 	public:
 		sniff_record_set_t() : pid(0) {};
 		sniff_record_set_t(uint64_t pid, std::vector<uint64_t> locations) : pid(pid) {};
 		uint64_t pid;
-		std::unordered_map<sniff_type_e, std::set<std::tuple<sniff_type_e, size_t, uint64_t>>> & get_locations() { return locations; }
+		const std::unordered_map<sniff_type_e, std::set<std::tuple<sniff_type_e, size_t, uint64_t>>> & get_locations() { return locations; }
 		const std::tuple<sniff_type_e, size_t, uint64_t> sniff_for_index(uint64_t index) {
 			uint64_t i = 0;
 			for (const auto & locations : get_locations()) {
@@ -388,7 +390,38 @@ namespace w32 {
 
 			return std::make_tuple<sniff_type_e, size_t, uint64_t>(sniff_type_e::unknown, 0, 0);
 		}
-		void setLocation(sniff_type_e value_type, size_t pid, uint64_t location);
+
+		void set_location(sniff_type_e value_type, size_t pid, uint64_t location);
+
+		void remove(std::set<uint64_t> & indicies) {
+			uint64_t i = 0;
+			for (auto & type_to_locations : locations) {
+				for (auto it = type_to_locations.second.begin(); it != type_to_locations.second.end();) {
+					if (indicies.count(i) == 1) {
+						it = type_to_locations.second.erase(it);
+					}
+					else {
+						++it;
+					}
+					++i;
+				}
+			}
+		}
+
+		void remove(indicies_t & indicies_range) {
+			uint64_t i = 0;
+			for (auto & type_to_locations : locations) {
+				for (auto it = type_to_locations.second.begin(); it != type_to_locations.second.end();) {
+					if (i >= indicies_range.start_index && i <= indicies_range.end_index) {
+						it = type_to_locations.second.erase(it);
+					}
+					else {
+						++it;
+					}
+					++i;
+				}
+			}
+		}
 
 		bool empty() const {
 			for (const auto type_to_locations : locations) {
@@ -411,6 +444,21 @@ namespace w32 {
 
 		void clear() {
 			locations.clear();
+		}
+
+		void commit() {
+			undo_locations = locations;
+		}
+
+		bool revert() {
+			if (!undo_locations.empty()) {
+				const auto tmp = locations;
+				locations = undo_locations;
+				undo_locations = tmp;
+				return true;
+			}
+
+			return false;
 		}
 
 		sniff_value_t value;

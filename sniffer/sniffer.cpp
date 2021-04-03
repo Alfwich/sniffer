@@ -74,7 +74,7 @@ namespace sniffer {
 	void do_set(int id, shared_memory_t * sm) {
 		auto value_to_set = w32::sniff_value_t(sm->args->context());
 
-		jobs_indicies_t indexs;
+		indicies_t indexs;
 		for (sm->get_next_job(indexs); indexs.start_index < sm->work_units.size(); sm->get_next_job(indexs)) {
 			auto & work_unit = sm->work_units.at(indexs.start_index);
 			do_sniff_mem_replace(work_unit.pid, work_unit.mem_location, work_unit.type, value_to_set);
@@ -180,7 +180,7 @@ namespace sniffer {
 		uint8_t * non_str_bytes;
 		auto min_num_int_bytes = value_to_find.min_num_int_bytes();
 		auto mem_region_copy = w32::memory_region_copy_t();
-		jobs_indicies_t indexs;
+		indicies_t indexs;
 		for (sm->get_next_job(indexs); indexs.start_index < sm->records->size(); sm->get_next_job(indexs)) {
 			const auto & region_record = sm->records->at(indexs.start_index);
 			mem_region_copy.reset(
@@ -217,7 +217,7 @@ namespace sniffer {
 					}
 
 					if (match) {
-						sm->sniff_record->setLocation(w32::sniff_type_e::str, region_record.AssociatedPid, location);
+						sm->sniff_record->set_location(w32::sniff_type_e::str, region_record.AssociatedPid, location);
 					}
 				}
 
@@ -225,7 +225,7 @@ namespace sniffer {
 					match = sniff_cmp_i(find_pred_str, *non_str_bytes, value_to_find.as_uint<uint8_t>());
 
 					if (match) {
-						sm->sniff_record->setLocation(w32::sniff_type_e::u8, region_record.AssociatedPid, location);
+						sm->sniff_record->set_location(w32::sniff_type_e::u8, region_record.AssociatedPid, location);
 					}
 				}
 
@@ -234,7 +234,7 @@ namespace sniffer {
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_uint<uint32_t>());
 
 					if (match) {
-						sm->sniff_record->setLocation(w32::sniff_type_e::u32, region_record.AssociatedPid, location);
+						sm->sniff_record->set_location(w32::sniff_type_e::u32, region_record.AssociatedPid, location);
 					}
 				}
 
@@ -243,7 +243,7 @@ namespace sniffer {
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_uint<uint64_t>());
 
 					if (match) {
-						sm->sniff_record->setLocation(w32::sniff_type_e::u64, region_record.AssociatedPid, location);
+						sm->sniff_record->set_location(w32::sniff_type_e::u64, region_record.AssociatedPid, location);
 					}
 				}
 
@@ -252,7 +252,7 @@ namespace sniffer {
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_int<int8_t>());
 
 					if (match) {
-						sm->sniff_record->setLocation(w32::sniff_type_e::i8, region_record.AssociatedPid, location);
+						sm->sniff_record->set_location(w32::sniff_type_e::i8, region_record.AssociatedPid, location);
 					}
 				}
 
@@ -261,7 +261,7 @@ namespace sniffer {
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_int<int32_t>());
 
 					if (match) {
-						sm->sniff_record->setLocation(w32::sniff_type_e::i32, region_record.AssociatedPid, location);
+						sm->sniff_record->set_location(w32::sniff_type_e::i32, region_record.AssociatedPid, location);
 					}
 				}
 
@@ -270,7 +270,7 @@ namespace sniffer {
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_int<int64_t>());
 
 					if (match) {
-						sm->sniff_record->setLocation(w32::sniff_type_e::i64, region_record.AssociatedPid, location);
+						sm->sniff_record->set_location(w32::sniff_type_e::i64, region_record.AssociatedPid, location);
 					}
 				}
 
@@ -279,7 +279,7 @@ namespace sniffer {
 					match = sniff_cmp_f(find_pred_str, val, value_to_find.as_float<float_t>());
 
 					if (match) {
-						sm->sniff_record->setLocation(w32::sniff_type_e::f32, region_record.AssociatedPid, location);
+						sm->sniff_record->set_location(w32::sniff_type_e::f32, region_record.AssociatedPid, location);
 					}
 				}
 
@@ -288,7 +288,7 @@ namespace sniffer {
 					match = sniff_cmp_f(find_pred_str, val, value_to_find.as_float<double_t>());
 
 					if (match) {
-						sm->sniff_record->setLocation(w32::sniff_type_e::f64, region_record.AssociatedPid, location);
+						sm->sniff_record->set_location(w32::sniff_type_e::f64, region_record.AssociatedPid, location);
 					}
 				}
 			}
@@ -302,7 +302,7 @@ namespace sniffer {
 		auto filter_value_pred_str = sm->args->context();
 		auto filter_value_pred = w32::sniff_value_t(filter_value_pred_str.c_str());
 		auto mem_region_copy = w32::memory_region_copy_t();
-		jobs_indicies_t indexs;
+		indicies_t indexs;
 		for (sm->get_next_job(indexs); indexs.start_index < sm->work_units.size(); sm->get_next_job(indexs)) {
 			for (uint64_t i = indexs.start_index; i < indexs.end_index && i < sm->work_units.size(); ++i) {
 				auto & work_unit = sm->work_units.at(i);
@@ -499,16 +499,18 @@ namespace sniffer {
 
 		}
 
-		for (auto & type_to_locations : ctx.state.sniffs->get_locations()) {
-			for (auto it = type_to_locations.second.begin(); it != type_to_locations.second.end();) {
-				if (sniffs_to_exclude.count(*it) == 1) {
-					it = type_to_locations.second.erase(it);
+		uint64_t i = 0;
+		std::set<uint64_t> sniffs_to_remove;
+		for (const auto & type_to_locations : ctx.state.sniffs->get_locations()) {
+			for (const auto & sniff : type_to_locations.second) {
+				if (sniffs_to_exclude.count(sniff) == 1) {
+					sniffs_to_remove.insert(i);
 				}
-				else {
-					++it;
-				}
+				i++;
 			}
 		}
+
+		ctx.state.sniffs->remove(sniffs_to_remove);
 
 		return result;
 	}
@@ -713,27 +715,23 @@ namespace sniffer {
 
 	void do_pre_workload(sniffer_context_t & ctx) {
 		profile_timer_t timer(ctx.state.profile, __FUNCTION__);
+
+		// Save sniff state if needed
+		if (ctx.args.action_is_one({ sniffer_cmd_e::find, sniffer_cmd_e::filter, sniffer_cmd_e::remove, sniffer_cmd_e::take })) {
+			ctx.state.sniffs->commit();
+		}
+
 		if (ctx.args.action_is(sniffer_cmd_e::undo)) {
-			/* TODO: Refactor undo
-			if (sniffs_eliminated[current_sniff_context].empty()) {
-				std::cout << "No history of sniffs to undo" << std::endl;
+			if (ctx.state.sniffs->revert()) {
+				std::cout << "Reverted to previous sniff state " << std::endl;
 			}
 			else {
-				std::cout << "Returned " << sniffs_eliminated[current_sniff_context].size() << " records into the working sniff set" << std::endl;
-				std::vector<win_api::SniffRecordSet> old_records = *sniffs;
-				for (auto & record : sniffs_eliminated[current_sniff_context]) {
-					sniffs->push_back(record);
-				}
-				sniffs_eliminated.clear();
+				std::cout << "No previous state to undo" << std::endl;
 			}
-			*/
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::clear) && !ctx.state.sniffs->empty()) {
 			std::cout << "Clearing all " << ctx.state.sniffs->size() << " sniff records" << std::endl;
 			ctx.state.sniffs->clear();
-			/* TODO: Refactor undo
-			sniffs_eliminated[current_sniff_context] = *sniffs;
-			*/
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::context)) {
 			if (ctx.args.context_is(sniffer_cmd_e::context_list) || ctx.args.size() == 1) {
@@ -799,27 +797,17 @@ namespace sniffer {
 		else if (ctx.args.action_is(sniffer_cmd_e::remove)) {
 			try {
 				const auto ids = get_index_range_from_argument(ctx.args.context());
-				if (ids.is_multiple) {
-					std::cout << "\tErasing records " << ids.min_index << ":" << (ids.max_index >= ctx.state.sniffs->size() ? ctx.state.sniffs->size() : ids.max_index) << std::endl;
-				}
-				else {
-					std::cout << "\tErasing record " << ids.min_index << std::endl;
-				}
-				if (ids.is_good && ids.min_index < ctx.state.sniffs->size()) {
-					/* TODO: Add rm
-					sniffs_eliminated[current_sniff_context].clear();
+				if (ids.is_good) {
 					if (ids.is_multiple) {
-						auto max_index = ids.max_index >= sniffs->size() ? sniffs->size() : ids.max_index + 1;
-						for (size_t i = ids.min_index; i < max_index; ++i) {
-							sniffs_eliminated[current_sniff_context].push_back(sniffs->at(i));
-						}
-						sniffs->erase(sniffs->begin() + ids.min_index, sniffs->begin() + max_index);
+						std::cout << "\tErasing records " << ids.min_index << ":" << (ids.max_index >= ctx.state.sniffs->size() ? ctx.state.sniffs->size() : ids.max_index) << std::endl;
 					}
 					else {
-						sniffs_eliminated[current_sniff_context].push_back(sniffs->at(ids.min_index));
-						sniffs->erase(sniffs->begin() + ids.min_index);
+						std::cout << "\tErasing record " << ids.min_index << std::endl;
 					}
-					*/
+					indicies_t indicies;
+					indicies.start_index = ids.min_index;
+					indicies.end_index = ids.max_index;
+					ctx.state.sniffs->remove(indicies);
 				}
 				else {
 					std::cout << "Could not erase indexs that do not exist" << std::endl;
@@ -914,15 +902,23 @@ namespace sniffer {
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::take) && !ctx.args.context().empty()) {
 			try {
-				/* TODO: Fix take
-				const auto ids = getIndexRangeFromArgument(ctx.args.getContext());
+				/*
+				const auto ids = get_index_range_from_argument(ctx.args.context());
 				if (ids.is_good) {
 					if (ids.is_multiple) {
 						std::cout << "Taking sniff set in range " << ids.min_index << " to " << ids.max_index << std::endl;
-						const auto max_index = ids.max_index >= sniffs->size() ? sniffs->size() : ids.max_index + 1;
-						const auto new_sniffs = std::vector<win_api::SniffRecordSet>(sniffs->begin() + ids.min_index, sniffs->begin() + max_index);
+						uint64_t i = 0;
+						auto & locations = ctx.state.sniffs->get_locations();
+						for (auto & type_to_sniffs : ctx.state.sniffs->get_locations()) {
+							for (auto & sniff : type_to_sniffs.second) {
+								if (i < ids.min_index && i > ids.max_index) {
+								}
+								++i;
+							}
+						}
+						const auto max_index = ids.max_index >= ctx.state.sniffs->size() ? ctx.state.sniffs->size() : ids.max_index + 1;
+						const auto new_sniffs = std::vector<w32::sniff_record_set_t>(ctx.state.sniffs->getubegin() + ids.min_index, sniffs->begin() + max_index);
 						sniffs->erase(sniffs->begin() + ids.min_index, sniffs->begin() + max_index);
-						sniffs_eliminated[current_sniff_context] = *sniffs;
 						*sniffs = new_sniffs;
 
 					}

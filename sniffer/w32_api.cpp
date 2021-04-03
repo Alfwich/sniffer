@@ -12,7 +12,7 @@
 #include "securitybaseapi.h"
 #include <stdint.h>
 
-#include "Params.h"
+#include "params.h"
 
 namespace w32 {
 	std::unordered_map<DWORD, HANDLE> open_handles;
@@ -186,106 +186,6 @@ namespace w32 {
 		}
 	}
 
-	/*
-	SniffRecordSet getSniffRecordFromLine(std::string & str) {
-		SniffRecordSet result;
-		size_t last = 0, next = 0;
-
-		for (auto i = 0; i < 4; ++i) {
-			next = str.find(SNIFF_FILE_DELIM, last);
-			switch (i) {
-			case 0:
-				result.pid = std::stoll(str.substr(last, next - last));
-				break;
-			case 1:
-				result.location = std::stoll(str.substr(last, next - last));
-				break;
-			case 2:
-			{
-				std::string type_str = str.substr(last, next - last);
-				result.type = getSniffTypeForStr(type_str);
-				break;
-			}
-			case 3:
-			{
-				std::string value_str = str.substr(last, next - last);
-				result.value.setValue(value_str);
-				break;
-			}
-
-			}
-			last = next + strlen(SNIFF_FILE_DELIM);
-		}
-
-		return result;
-	}
-
-	std::unordered_map<std::string, std::vector<SniffRecordSet>> getSniffsForProcess(const std::string & sniff_file_name) {
-		std::unordered_map<std::string, std::vector<SniffRecordSet>> result;
-		std::string current_context;
-		std::ifstream sniff_file(sniff_file_name);
-		const auto live_pids = getAllLivePIDs();
-
-		if (sniff_file.is_open()) {
-			std::string line;
-			while (true) {
-				std::getline(sniff_file, line);
-				if (line.find("ctx|") == 0) {
-					current_context = line.substr(4);
-					auto _tmp = result[current_context];
-					continue;
-				}
-				if (line.empty()) break;
-				auto sniff = getSniffRecordFromLine(line);
-				if (live_pids.count(sniff.pid) > 0) {
-					result.at(current_context).push_back(sniff);
-				}
-			}
-		}
-
-		return result;
-	}
-
-	void writeSniffsToSniffFile(const std::string & sniff_file_name, std::vector<SniffRecordSet> & sniff_records, std::ofstream & sniff_file) {
-		if (sniff_file.is_open()) {
-			for (auto & record : sniff_records) {
-				sniff_file << record.pid << SNIFF_FILE_DELIM << record.location << SNIFF_FILE_DELIM << getSniffTypeStrForType(record.type);
-				switch (record.type) {
-				case SniffType::i8:
-					sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asI8() << std::endl;
-					break;
-				case SniffType::i32:
-					sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asI32() << std::endl;
-					break;
-				case SniffType::i64:
-					sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asI64() << std::endl;
-					break;
-				case SniffType::u8:
-					sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asU8() << std::endl;
-					break;
-				case SniffType::u32:
-					sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asU32() << std::endl;
-					break;
-				case SniffType::u64:
-					sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asU64() << std::endl;
-					break;
-				case SniffType::f32:
-					sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asF32() << std::endl;
-					break;
-				case SniffType::f64:
-					sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asF64() << std::endl;
-					break;
-				case SniffType::str:
-					sniff_file << SNIFF_FILE_DELIM << std::fixed << record.value.asString() << std::endl;
-					break;
-				default:
-					sniff_file << SNIFF_FILE_DELIM << std::endl;
-				}
-			}
-		}
-	}
-	*/
-
 	sniff_type_e get_sniff_type_for_str(const std::string & type_str) {
 		if (type_str == "str") {
 			return sniff_type_e::str;
@@ -384,11 +284,10 @@ namespace w32 {
 	}
 
 	std::mutex sniff_record_set_location_mutex;
-	void sniff_record_set_t::setLocation(sniff_type_e value_type, size_t pid, uint64_t location) {
+	void sniff_record_set_t::set_location(sniff_type_e value_type, size_t pid, uint64_t location) {
 		std::lock_guard<std::mutex> lock(sniff_record_set_location_mutex);
 		locations[value_type].insert(std::make_tuple(value_type, pid, location));
 	}
-
 
 	std::string data_to_string(sniff_type_e type, uint8_t * data, size_t size) {
 		std::string result;

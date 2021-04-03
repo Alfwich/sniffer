@@ -10,6 +10,7 @@
 #include "w32_api.h"
 
 #include "sniffer_cmds.h"
+#include "utils.h"
 
 namespace {
 	const char * default_str = "";
@@ -178,13 +179,6 @@ namespace sniffer {
 		}
 	};
 
-
-	class jobs_indicies_t {
-	public:
-		uint64_t start_index = 0;
-		uint64_t end_index = 0;
-	};
-
 	class repeat_record_t {
 	public:
 		w32::sniff_type_e type;
@@ -239,7 +233,7 @@ namespace sniffer {
 			current_job = 0;
 		}
 
-		void get_next_job(jobs_indicies_t & job_index) {
+		void get_next_job(indicies_t & job_index) {
 			std::lock_guard<std::mutex> stack_lock(lock);
 			job_index.start_index = current_job;
 			current_job += job_spread;
