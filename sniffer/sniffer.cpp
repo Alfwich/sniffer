@@ -626,7 +626,7 @@ namespace sniffer {
 			std::cout << "\t\t<list, ls>" << std::endl;
 			std::cout << "\tModify existing sniff records:" << std::endl;
 			std::cout << "\t\t<filter> \"VALUE\" <type <i8|u8|i32|u32|i64|u64|f32|f64|str>> <pred <gt|lt|eq|ne>>" << std::endl;
-			std::cout << "\t\t<take> <index|range>" << std::endl;
+			std::cout << "\t\t<pick> <index|range>" << std::endl;
 			std::cout << "\t\t<remove, rm> <id|range>" << std::endl;
 			std::cout << "\t\t<undo>" << std::endl;
 			std::cout << "\t\t<profile>" << std::endl;
@@ -717,7 +717,7 @@ namespace sniffer {
 		profile_timer_t timer(ctx.state.profile, __FUNCTION__);
 
 		// Save sniff state if needed
-		if (ctx.args.action_is_one({ sniffer_cmd_e::find, sniffer_cmd_e::filter, sniffer_cmd_e::remove, sniffer_cmd_e::take })) {
+		if (ctx.args.action_is_one({ sniffer_cmd_e::find, sniffer_cmd_e::filter, sniffer_cmd_e::remove, sniffer_cmd_e::pick })) {
 			ctx.state.sniffs->commit();
 		}
 
@@ -900,15 +900,15 @@ namespace sniffer {
 			}
 
 		}
-		else if (ctx.args.action_is(sniffer_cmd_e::take) && !ctx.args.context().empty()) {
+		else if (ctx.args.action_is(sniffer_cmd_e::pick) && !ctx.args.context().empty()) {
 			try {
 				const auto ids = get_index_range_from_argument(ctx.args.context());
 				if (ids.is_good) {
 					if (ids.is_multiple) {
-						std::cout << "Taking sniff set in range " << ids.min_index << " to " << ids.max_index << std::endl;
+						std::cout << "Picking sniff set in range " << ids.min_index << " to " << ids.max_index << std::endl;
 					}
 					else {
-						std::cout << "Taking sniff value at index " << ids.min_index << std::endl;
+						std::cout << "Picking sniff value at index " << ids.min_index << std::endl;
 					}
 
 					indicies_t indicies;
