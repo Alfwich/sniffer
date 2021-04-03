@@ -295,9 +295,7 @@ namespace sniffer {
 		}
 	}
 
-	// TODO: Fix update
 	void do_resniffs(int id, shared_memory_t * sm) {
-		auto is_update_resniff = sm->args->action_is(sniffer_cmd_e::update);
 		auto resniff_pred_str = sm->args->at("spred", "eq");
 		auto resniff_type_pred_str = sm->args->at("stype");
 		auto resniff_type_pred = w32::get_sniff_type_for_str(resniff_type_pred_str);
@@ -316,7 +314,7 @@ namespace sniffer {
 					work_unit.type == w32::sniff_type_e::str ? sm->sniff_record->value.as_string().size() : 8,
 					false
 				);
-				if (!is_update_resniff && resniff_type_pred != w32::sniff_type_e::unknown) {
+				if (resniff_type_pred != w32::sniff_type_e::unknown) {
 					if (work_unit.type != resniff_type_pred) {
 						sm->thread_resniffs[id].insert(std::make_tuple(work_unit.type, work_unit.pid, work_unit.mem_location));
 						continue;
@@ -415,7 +413,7 @@ namespace sniffer {
 					}
 				}
 
-				if (!is_update_resniff && !match) {
+				if (!match) {
 					sm->thread_resniffs[id].insert(std::make_tuple(work_unit.type, work_unit.pid, work_unit.mem_location));
 				}
 			}
@@ -478,9 +476,9 @@ namespace sniffer {
 
 			result.push_back(do_replaces);
 		}
-		else if (ctx.args.action_is(sniffer_cmd_e::filter) || ctx.args.action_is(sniffer_cmd_e::update)) {
+		else if (ctx.args.action_is(sniffer_cmd_e::filter)) {
 			if (ctx.state.sniffs->empty()) {
-				std::cout << "Expected to find cached sniffs when using action filter/update - run 'find' to get records" << std::endl;
+				std::cout << "Expected to find cached sniffs when using action filter - run 'find' to get records" << std::endl;
 				result.clear();
 				return result;
 			}
@@ -518,6 +516,7 @@ namespace sniffer {
 	void dump_sniffs(w32::sniff_record_set_t * record, uint32_t offset = 0) {
 		uint32_t i = 0;
 		bool has_offset_output = false;
+		auto mem_region_copy = w32::memory_region_copy_t();
 		for (auto & type_to_location : record->getLocations()) {
 			for (const auto mem_location : type_to_location.second) {
 
@@ -530,9 +529,16 @@ namespace sniffer {
 					has_offset_output = false;
 				}
 
-				std::cout << "\t SniffRecord (id=" << i - 1 << ", pid=" << record->pid << ", location=";
-				std::cout << "0x" << std::setw(16) << std::setfill('0') << std::hex << std::get<1>(mem_location) << std::dec;
-				std::cout << ", type=" << w32::get_sniff_type_str_for_type(type_to_location.first) << ", value=" << record->value.as_typed_str(type_to_location.first);
+				const auto size = std::get<0>(mem_location) == w32::sniff_type_e::str ? record->value.as_string().size() : 8;
+				mem_region_copy.reset(
+					(w32::DWORD)std::get<1>(mem_location),
+					(w32::LPVOID)std::get<2>(mem_location),
+					size,
+					false
+				);
+				std::cout << "\t SniffRecord (id=" << i - 1 << ", pid=" << std::get<1>(mem_location) << ", location=";
+				std::cout << "0x" << std::setw(16) << std::setfill('0') << std::hex << std::get<2>(mem_location) << std::dec;
+				std::cout << ", type=" << w32::get_sniff_type_str_for_type(type_to_location.first) << ", value=" << data_to_string(type_to_location.first, &mem_region_copy[0], size);
 				std::cout << ")" << std::endl;
 
 				if (i - offset == 20) {
@@ -619,7 +625,6 @@ namespace sniffer {
 			std::cout << "\t\t <filter> \"VALUE\" <stype <i8|u8|i32|u32|i64|u64|f32|f64|str>> <spred <gt|lt|eq|ne>>" << std::endl;
 			std::cout << "\t\t <take> <index|range>" << std::endl;
 			std::cout << "\t\t <remove, rm> <id|range>" << std::endl;
-			std::cout << "\t\t <update>" << std::endl;
 			std::cout << "\t\t <undo>" << std::endl;
 			std::cout << "\t Replace all values in memory:" << std::endl;
 			std::cout << "\t\t <replace, r> \"VALUE\"" << std::endl;
@@ -974,7 +979,7 @@ namespace sniffer {
 		split_large_records(records);
 
 		ctx.mem.update_mem_state(&ctx.args, ctx.state.sniffs, &records, ctx.state.num_threads, 1);
-		if (ctx.args.action_is_one({ sniffer_cmd_e::set, sniffer_cmd_e::update, sniffer_cmd_e::filter })) {
+		if (ctx.args.action_is_one({ sniffer_cmd_e::set, sniffer_cmd_e::filter })) {
 			create_sniff_work_units_for_context(ctx);
 		}
 		const auto actions = get_actions_for_ctx(ctx);
@@ -1038,10 +1043,6 @@ namespace sniffer {
 			catch (...) {
 				dump_sniffs(ctx.state.sniffs);
 			}
-		}
-		else if (ctx.args.action_is(sniffer_cmd_e::update)) {
-			std::cout << "Updated sniffs with existing values in the process(s)" << std::endl;
-			dump_sniffs(ctx.state.sniffs);
 		}
 	}
 

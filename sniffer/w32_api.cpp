@@ -389,4 +389,52 @@ namespace w32 {
 		locations[value_type].insert(std::make_tuple(value_type, pid, location));
 	}
 
+
+	std::string data_to_string(sniff_type_e type, uint8_t * data, size_t size) {
+		std::string result;
+
+		switch (type) {
+		case sniff_type_e::i8:
+			result = std::to_string(*(int8_t *)data);
+			break;
+
+		case sniff_type_e::i32:
+			result = std::to_string(*(int32_t *)data);
+			break;
+
+		case sniff_type_e::i64:
+			result = std::to_string(*(int64_t *)data);
+			break;
+
+		case sniff_type_e::u8:
+			result = std::to_string(*(uint8_t *)data);
+			break;
+
+		case sniff_type_e::u32:
+			result = std::to_string(*(uint32_t *)data);
+			break;
+
+		case sniff_type_e::u64:
+			result = std::to_string(*(uint64_t *)data);
+			break;
+
+		case sniff_type_e::f32:
+			result = std::to_string(*(float_t *)data);
+			break;
+
+		case sniff_type_e::f64:
+			result = std::to_string(*(double_t *)data);
+			break;
+
+		case sniff_type_e::str:
+			for (auto i = 0; i < size; ++i) { result.push_back(data[i]); }
+			break;
+
+		default:
+			// NO OP
+			break;
+		}
+
+		return result;
+	}
 }

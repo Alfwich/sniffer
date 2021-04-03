@@ -1,5 +1,7 @@
 #pragma once
 
+#include "w32_api.h"
+
 static inline void left_trim(std::string & s) {
 	s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
 		return !std::isspace(ch);

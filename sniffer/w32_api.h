@@ -417,4 +417,5 @@ namespace w32 {
 	sniff_type_e get_sniff_type_for_str(const std::string & type_str);
 	std::string get_num_system_cores();
 	void clear_open_handles(const std::vector<DWORD> pids);
+	std::string data_to_string(sniff_type_e type, uint8_t * data, size_t size);
 }
