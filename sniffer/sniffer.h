@@ -185,6 +185,14 @@ namespace sniffer {
 		uint64_t end_index = 0;
 	};
 
+	class repeat_record_t {
+	public:
+		w32::sniff_type_e type;
+		size_t pid;
+		uint64_t location;
+		w32::sniff_value_t value;
+	};
+
 	class global_state_t {
 	public:
 		std::thread replace_thread;
@@ -198,7 +206,7 @@ namespace sniffer {
 		uint64_t num_threads;
 
 		std::mutex replace_thread_mutex;
-		std::vector<std::pair<w32::sniff_record_set_t, w32::sniff_value_t>> repeat_replace;
+		std::vector<repeat_record_t> repeat_replace;
 		bool replace_thread_is_running = true;
 		bool profile = false;
 	};

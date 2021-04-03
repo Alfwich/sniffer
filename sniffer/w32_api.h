@@ -375,7 +375,19 @@ namespace w32 {
 		sniff_record_set_t() : pid(0) {};
 		sniff_record_set_t(uint64_t pid, std::vector<uint64_t> locations) : pid(pid) {};
 		uint64_t pid;
-		std::unordered_map<sniff_type_e, std::set<std::tuple<sniff_type_e, size_t, uint64_t>>> & getLocations() { return locations; }
+		std::unordered_map<sniff_type_e, std::set<std::tuple<sniff_type_e, size_t, uint64_t>>> & get_locations() { return locations; }
+		const std::tuple<sniff_type_e, size_t, uint64_t> sniff_for_index(uint64_t index) {
+			uint64_t i = 0;
+			for (const auto & locations : get_locations()) {
+				for (const auto & sniff : locations.second) {
+					if (i++ == index) {
+						return sniff;
+					}
+				}
+			}
+
+			return std::make_tuple<sniff_type_e, size_t, uint64_t>(sniff_type_e::unknown, 0, 0);
+		}
 		void setLocation(sniff_type_e value_type, size_t pid, uint64_t location);
 
 		bool empty() const {
