@@ -23,6 +23,7 @@ class profile_timer_t {
 	uint8_t context = 0;
 	long long start, end;
 	bool started = true;
+	bool enabled = true;
 	const char * label;
 
 	long long getCurrentMicroseconds() {
@@ -36,25 +37,26 @@ class profile_timer_t {
 			contexts[context].addTime(end - start);
 		}
 		else {
-			std::cout << label << " took " << (end - start) / 10000.0 << "(ms)" << std::endl;
+			std::cout << '\t' << label << " took " << (end - start) / 10000.0 << "(ms)" << std::endl;
 		}
 	}
 
 public:
-	profile_timer_t() : label(""), context(0), start(getCurrentMicroseconds()) {}
-	profile_timer_t(uint8_t context) : label(""), context(context), start(getCurrentMicroseconds()) {}
-	profile_timer_t(const char * label) : label(label), context(0), start(getCurrentMicroseconds()) {}
+	profile_timer_t() : enabled(false), label(""), context(0), start(getCurrentMicroseconds()) {}
+	profile_timer_t(bool enabled) : enabled(enabled), label(""), context(0), start(getCurrentMicroseconds()) {}
+	profile_timer_t(bool enabled, uint8_t context) : enabled(enabled), label(""), context(context), start(getCurrentMicroseconds()) {}
+	profile_timer_t(bool enabled, const char * label) : enabled(enabled), label(label), context(0), start(getCurrentMicroseconds()) {}
 	~profile_timer_t() { stop(); }
 
 	static void ReportAllContexts() {
 		for (const auto & context_to_time : contexts) {
-			std::cout << " context " << (int32_t)context_to_time.first << " took " << (context_to_time.second.time / 10000.0) << "(ms)" << std::endl;
+			std::cout << "\t\tcontext " << (int32_t)context_to_time.first << " took " << (context_to_time.second.time / 10000.0) << "(ms)" << std::endl;
 		}
 		contexts.clear();
 	}
 
 	void stop() {
-		if (started) {
+		if (enabled && started) {
 			end = getCurrentMicroseconds();
 			started = false;
 

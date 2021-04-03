@@ -200,6 +200,7 @@ namespace sniffer {
 		std::mutex replace_thread_mutex;
 		std::vector<std::pair<w32::sniff_record_set_t, w32::sniff_value_t>> repeat_replace;
 		bool replace_thread_is_running = true;
+		bool profile = false;
 	};
 
 	class shared_memory_t {
