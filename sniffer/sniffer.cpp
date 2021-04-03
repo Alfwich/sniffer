@@ -641,7 +641,7 @@ namespace sniffer {
 			std::cout << "\t Exit sniffer and save sniff file:" << std::endl;
 			std::cout << "\t\t <quit, exit, q>" << std::endl;
 			std::cout << "\t Display help info:" << std::endl;
-			std::cout << "\t\t <\"\", ?, help>" << std::endl;
+			std::cout << "\t\t <?, help>" << std::endl;
 		}
 
 		return parse_arg_string_into_args_map(line);
@@ -656,7 +656,6 @@ namespace sniffer {
 					for (const auto & type_to_locations : sniff_record_to_sniff_value.first.getLocations()) {
 						for (const auto & pid_and_mem_location : type_to_locations.second) {
 							if (do_sniff_mem_replace(std::get<2>(pid_and_mem_location), std::get<1>(pid_and_mem_location), type_to_locations.first, sniff_record_to_sniff_value.second)) {
-								// TODO: Update value sniff_record_to_sniff_value.second ?
 							}
 						}
 					}
