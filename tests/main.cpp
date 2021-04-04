@@ -1,4 +1,8 @@
 #include <iostream>
+
+#include "libsniffer/sniffer.h"
+
+#include <iostream>
 #include <iomanip>
 #include <thread>
 #include <chrono>
@@ -18,21 +22,12 @@ public:
     std::string static_str = "Hello World!";
 };
 
-static bool running = true;
-
-void end_callback(int signum)
-{
-    running = false;
-}
-
-int main(void)
-{
-
+int main(int argc, char * argv[]) {
     std::vector<test_mem_t> mem;
     mem.resize(50000000);
 
-    while (running) {
-        const test_mem_t& first = mem.front();
+    while (true) {
+        const test_mem_t & first = mem.front();
         system("cls");
         std::cout
             << "Static values" << std::setprecision(16)
@@ -49,5 +44,5 @@ int main(void)
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
-    return 0;
+	return 0;
 }

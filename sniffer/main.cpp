@@ -1,9 +1,6 @@
 #include <iostream>
-#include "sniffer.h"
-#include "params.h"
-#include "profile_timer.h"
-#include "w32_api.h"
-#include "utils.h"
+
+#include "libsniffer/sniffer.h"
 
 int main(int argc, char * argv[]) {
 	sniffer::sniffer_context_t main;
