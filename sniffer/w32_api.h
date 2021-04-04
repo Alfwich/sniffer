@@ -60,7 +60,7 @@ namespace w32 {
 
 		memory_region_copy_t() {
 			page_size = get_system_page_size();
-			bytes.resize(page_size * 1024);
+			bytes.resize(page_size * NUM_PAGES_TO_BUFFER);
 		}
 
 		void reset(w32::DWORD pid, w32::LPVOID location, w32::SIZE_T size, bool refs_split_record) {
@@ -78,7 +78,7 @@ namespace w32 {
 		uint64_t size() { return region_size; }
 
 		bool is_good() { return !has_failed_load && region_size != 0 && base != 0; }
-		bool index_is_boundary(uint64_t i) { return translate_index(i) + 8 >= bytes.size(); }
+		bool index_lies_on_boundary(uint64_t i) { return translate_index(i) + 8 >= bytes.size(); }
 	};
 
 	enum class sniff_type_e {
@@ -96,7 +96,6 @@ namespace w32 {
 
 	class sniff_value_t {
 		std::string str_value = "";
-		std::string old_str_value = "";
 		std::int64_t int_value = 0;
 		std::uint64_t uint_value = 0;
 		std::double_t fp_value = 0.0;
@@ -392,6 +391,7 @@ namespace w32 {
 		}
 
 		void set_location(sniff_type_e value_type, size_t pid, uint64_t location);
+		void set_location_unsafe(const std::tuple<sniff_type_e, size_t, uint64_t> & tuple);
 
 		void remove(std::set<uint64_t> & indicies) {
 			uint64_t i = 0;
@@ -425,7 +425,7 @@ namespace w32 {
 		}
 
 		bool empty() const {
-			for (const auto type_to_locations : locations) {
+			for (const auto & type_to_locations : locations) {
 				if (!type_to_locations.second.empty()) {
 					return false;
 				}
@@ -433,10 +433,11 @@ namespace w32 {
 
 			return true;
 		}
+
 		size_t size() const {
 			size_t size = 0;
 
-			for (const auto type_to_locations : locations) {
+			for (const auto & type_to_locations : locations) {
 				size += type_to_locations.second.size();
 			}
 

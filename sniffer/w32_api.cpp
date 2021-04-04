@@ -241,7 +241,8 @@ namespace w32 {
 		auto max_chunk_factor = page_size * 64;
 		auto chunk_factor = max_chunk_factor;
 		auto start = (SIZE_T)max_loaded_mem_location + base;
-		auto end = min(start + (page_size * 1022), (base + region_size + (refs_split_record ? 1024 : 0)));
+		auto split_record_additional_size = refs_split_record ? 1024 : 0;
+		auto end = min(start + (page_size * NUM_PAGES_TO_BUFFER - 2), (base + region_size + split_record_additional_size));
 		auto i = 0;
 		while (start < end) {
 			auto translated_index = translate_index(addr_from_base_to_load + total_bytes_read);
@@ -258,8 +259,9 @@ namespace w32 {
 				chunk_factor = min(chunk_factor * 4, max_chunk_factor);
 			}
 
+			// Attempt one more byte read before exiting
 			if (rpm_result == 0 && chunk_factor > 1) {
-				chunk_factor = max(chunk_factor / 4, 1);
+				chunk_factor = 1;
 				continue;
 			}
 			else if (rpm_result == 0) {
@@ -286,7 +288,12 @@ namespace w32 {
 	std::mutex sniff_record_set_location_mutex;
 	void sniff_record_set_t::set_location(sniff_type_e value_type, size_t pid, uint64_t location) {
 		std::lock_guard<std::mutex> lock(sniff_record_set_location_mutex);
-		locations[value_type].insert(std::make_tuple(value_type, pid, location));
+		locations[value_type].emplace(value_type, pid, location);
+	}
+
+	// Thread unsafe set location
+	void sniff_record_set_t::set_location_unsafe(const std::tuple<sniff_type_e, size_t, uint64_t> & tuple) {
+		locations[std::get<0>(tuple)].emplace(tuple);
 	}
 
 	std::string data_to_string(sniff_type_e type, uint8_t * data, size_t size) {
