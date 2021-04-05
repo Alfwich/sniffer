@@ -82,13 +82,14 @@ namespace sniffer {
 		}
 	}
 
-	bool inline type_is_type_or_none(w32::sniff_type_e a, w32::sniff_type_e b) {
-		return a == b || a == w32::sniff_type_e::unknown;
+	bool inline type_is_type(uint32_t a, w32::sniff_type_e b) {
+		return (w32::sniff_type_e)(a | (uint32_t)b) == b;
 	}
 
-	bool inline type_is_type(w32::sniff_type_e a, w32::sniff_type_e b) {
-		return a == b;
+	bool inline type_is_type_or_none(uint32_t a, w32::sniff_type_e b) {
+		return type_is_type(a, b) || type_is_type(a, w32::sniff_type_e::unknown);
 	}
+
 
 	bool sniff_cmp_i(std::string & pred, uint64_t a, uint64_t b) {
 		if (pred == "lt") {
@@ -318,8 +319,8 @@ namespace sniffer {
 					work_unit.type == w32::sniff_type_e::str ? sm->sniff_record->value.as_string().size() : 8,
 					false
 				);
-				if (filter_type_pred != w32::sniff_type_e::unknown) {
-					if (work_unit.type != filter_type_pred) {
+				if (filter_type_pred != 0) {
+					if (((uint32_t)work_unit.type & filter_type_pred) == 0) {
 						sm->thread_resniffs[id].insert(std::make_tuple(work_unit.type, work_unit.pid, work_unit.mem_location));
 						continue;
 					}

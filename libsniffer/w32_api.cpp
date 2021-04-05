@@ -186,36 +186,53 @@ namespace w32 {
 		}
 	}
 
-	sniff_type_e get_sniff_type_for_str(const std::string & type_str) {
-		if (type_str == "str") {
-			return sniff_type_e::str;
-		}
-		else if (type_str == "i8") {
-			return sniff_type_e::i8;
-		}
-		else if (type_str == "i32") {
-			return sniff_type_e::i32;
-		}
-		else if (type_str == "i64") {
-			return sniff_type_e::i64;
-		}
-		else if (type_str == "u8") {
-			return sniff_type_e::u8;
-		}
-		else if (type_str == "u32") {
-			return sniff_type_e::u32;
-		}
-		else if (type_str == "u64") {
-			return sniff_type_e::u64;
-		}
-		else if (type_str == "f32") {
-			return sniff_type_e::f32;
-		}
-		else if (type_str == "f64") {
-			return sniff_type_e::f64;
+	std::unordered_map<std::string, uint32_t> get_sniff_type_for_str_memo;
+	uint32_t get_sniff_type_for_str(const std::string & type_str) {
+		if (get_sniff_type_for_str_memo.count(type_str) == 0) {
+
+			uint32_t result = 0;
+
+			if (type_str.find("str") != std::string::npos) {
+				result |= (uint32_t)sniff_type_e::str;
+			}
+
+			if (type_str.find("i8") != std::string::npos) {
+				result |= (uint32_t)sniff_type_e::i8;
+			}
+
+			if (type_str.find("u8") != std::string::npos) {
+				result |= (uint32_t)sniff_type_e::u8;
+			}
+
+			if (type_str.find("i32") != std::string::npos) {
+				result |= (uint32_t)sniff_type_e::i32;
+			}
+
+			if (type_str.find("u32") != std::string::npos) {
+				result |= (uint32_t)sniff_type_e::u32;
+			}
+
+			if (type_str.find("i64") != std::string::npos) {
+				result |= (uint32_t)sniff_type_e::i64;
+			}
+
+			if (type_str.find("u64") != std::string::npos) {
+				result |= (uint32_t)sniff_type_e::u64;
+			}
+
+			if (type_str.find("f32") != std::string::npos) {
+				result |= (uint32_t)sniff_type_e::f32;
+			}
+
+			if (type_str.find("f64") != std::string::npos) {
+				result |= (uint32_t)sniff_type_e::f64;
+			}
+
+			get_sniff_type_for_str_memo[std::string(type_str)] = result;
+
 		}
 
-		return sniff_type_e::unknown;
+		return get_sniff_type_for_str_memo.at(type_str);
 	}
 
 	std::string get_num_system_cores() {

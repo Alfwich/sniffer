@@ -82,16 +82,16 @@ namespace w32 {
 	};
 
 	enum class sniff_type_e {
-		unknown,
-		str,
-		i8,
-		i32,
-		i64,
-		u8,
-		u32,
-		u64,
-		f32,
-		f64
+		unknown = 0,
+		str = 1,
+		i8 = 2,
+		i32 = 4,
+		i64 = 8,
+		u8 = 16,
+		u32 = 32,
+		u64 = 64,
+		f32 = 128,
+		f64 = 256
 	};
 
 	class sniff_value_t {
@@ -476,7 +476,7 @@ namespace w32 {
 	std::vector<DWORD> get_all_pids_for_process_name(std::wstring proc_name);
 	void set_bytes_at_location_for_pid(uint64_t pid, uint64_t location, uint8_t * bytes, size_t size);
 	const char * get_sniff_type_str_for_type(sniff_type_e type);
-	sniff_type_e get_sniff_type_for_str(const std::string & type_str);
+	uint32_t get_sniff_type_for_str(const std::string & type_str);
 	std::string get_num_system_cores();
 	void clear_open_handles(const std::vector<DWORD> pids);
 	std::string data_to_string(sniff_type_e type, uint8_t * data, size_t size);
