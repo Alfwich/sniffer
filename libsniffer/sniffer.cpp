@@ -83,13 +83,12 @@ namespace sniffer {
 	}
 
 	bool inline type_is_type(uint32_t a, w32::sniff_type_e b) {
-		return (w32::sniff_type_e)(a | (uint32_t)b) == b;
+		return a == (a | (uint32_t)b);
 	}
 
 	bool inline type_is_type_or_none(uint32_t a, w32::sniff_type_e b) {
-		return type_is_type(a, b) || type_is_type(a, w32::sniff_type_e::unknown);
+		return type_is_type(a, b) || a == 0;
 	}
-
 
 	bool sniff_cmp_i(std::string & pred, uint64_t a, uint64_t b) {
 		if (pred == "lt") {
