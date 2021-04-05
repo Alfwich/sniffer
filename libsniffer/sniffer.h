@@ -61,6 +61,14 @@ namespace sniffer {
 			arg_words = new_arg_words;
 		}
 
+		void set_context(const std::string & new_context) {
+			arg_map["___ctx_param"] = new_context;
+		}
+
+		void set_arg(const std::string & key, const std::string & new_value) {
+			arg_map[key] = new_value;
+		}
+
 		std::string get_arg(const char * key, const std::string & def = default_str) const {
 			if (arg_map.count(key) > 0) {
 				return arg_map.at(key);
@@ -121,6 +129,10 @@ namespace sniffer {
 			return default_str;
 		}
 
+		const std::vector<std::string> & get_args() {
+			return arg_words;
+		}
+
 		bool action_is(std::string action) const {
 			return action_is_one({ action });
 		}
@@ -174,7 +186,7 @@ namespace sniffer {
 		}
 
 		std::string context(std::string def = "") const {
-			const auto result = at("ctx_param", arg_at_index(1));
+			const auto result = at("___ctx_param", arg_at_index(1));
 			return result.empty() ? def : result;
 		}
 	};
@@ -189,6 +201,7 @@ namespace sniffer {
 
 	class global_state_t {
 	public:
+		std::unordered_map<std::string, std::string> in_process_scratch_pad;
 		std::thread replace_thread;
 		std::string executable_to_consider;
 		std::wstring executable_to_consider_wstring;

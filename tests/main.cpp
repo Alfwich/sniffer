@@ -24,7 +24,7 @@ public:
 
 int main(int argc, char * argv[]) {
     std::vector<test_mem_t> mem;
-    mem.resize(5000000);
+    mem.resize(5000);
 
     while (true) {
         const test_mem_t & first = mem.front();
