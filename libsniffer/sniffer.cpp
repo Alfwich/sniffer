@@ -225,7 +225,7 @@ namespace sniffer {
 					}
 				}
 
-				if (min_num_int_bytes <= 1 && type_is_type(find_type_pred, w32::sniff_type_e::u8)) {
+				if (min_num_int_bytes <= 1 && value_to_find.uint_good() && type_is_type(find_type_pred, w32::sniff_type_e::u8)) {
 					match = sniff_cmp_i(find_pred_str, *non_str_bytes, value_to_find.as_uint<uint8_t>());
 
 					if (match) {
@@ -233,7 +233,7 @@ namespace sniffer {
 					}
 				}
 
-				if (min_num_int_bytes <= 4 && type_is_type_or_none(find_type_pred, w32::sniff_type_e::u32)) {
+				if (min_num_int_bytes <= 4 && value_to_find.uint_good() && type_is_type_or_none(find_type_pred, w32::sniff_type_e::u32)) {
 					uint32_t val = *(uint32_t *)non_str_bytes;
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_uint<uint32_t>());
 
@@ -242,7 +242,7 @@ namespace sniffer {
 					}
 				}
 
-				if (min_num_int_bytes <= 8 && type_is_type_or_none(find_type_pred, w32::sniff_type_e::u64)) {
+				if (min_num_int_bytes <= 8 && value_to_find.uint_good() && type_is_type_or_none(find_type_pred, w32::sniff_type_e::u64)) {
 					uint64_t val = *(uint64_t *)non_str_bytes;
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_uint<uint64_t>());
 
@@ -251,7 +251,7 @@ namespace sniffer {
 					}
 				}
 
-				if (min_num_int_bytes <= 1 && type_is_type(find_type_pred, w32::sniff_type_e::i8)) {
+				if (min_num_int_bytes <= 1 && value_to_find.int_good() && type_is_type(find_type_pred, w32::sniff_type_e::i8)) {
 					int8_t val = *(int8_t *)non_str_bytes;
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_int<int8_t>());
 
@@ -260,7 +260,7 @@ namespace sniffer {
 					}
 				}
 
-				if (min_num_int_bytes <= 4 && type_is_type_or_none(find_type_pred, w32::sniff_type_e::i32)) {
+				if (min_num_int_bytes <= 4 && value_to_find.int_good() && type_is_type_or_none(find_type_pred, w32::sniff_type_e::i32)) {
 					int32_t val = *(int32_t *)non_str_bytes;
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_int<int32_t>());
 
@@ -269,7 +269,7 @@ namespace sniffer {
 					}
 				}
 
-				if (min_num_int_bytes <= 8 && type_is_type_or_none(find_type_pred, w32::sniff_type_e::i64)) {
+				if (min_num_int_bytes <= 8 && value_to_find.int_good() && type_is_type_or_none(find_type_pred, w32::sniff_type_e::i64)) {
 					int64_t val = *(int64_t *)non_str_bytes;
 					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_int<int64_t>());
 
@@ -278,7 +278,7 @@ namespace sniffer {
 					}
 				}
 
-				if (type_is_type_or_none(find_type_pred, w32::sniff_type_e::f32)) {
+				if (value_to_find.float_good() && type_is_type_or_none(find_type_pred, w32::sniff_type_e::f32)) {
 					float_t val = *(float_t *)non_str_bytes;
 					match = sniff_cmp_f(find_pred_str, val, value_to_find.as_float<float_t>());
 
@@ -287,7 +287,7 @@ namespace sniffer {
 					}
 				}
 
-				if (type_is_type_or_none(find_type_pred, w32::sniff_type_e::f64)) {
+				if (value_to_find.float_good() && type_is_type_or_none(find_type_pred, w32::sniff_type_e::f64)) {
 					double_t val = *(double_t *)non_str_bytes;
 					match = sniff_cmp_f(find_pred_str, val, value_to_find.as_float<double_t>());
 

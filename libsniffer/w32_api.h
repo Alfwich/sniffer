@@ -100,7 +100,11 @@ namespace w32 {
 		std::uint64_t uint_value = 0;
 		std::double_t fp_value = 0.0;
 		w32::sniff_type_e ref_type = sniff_type_e::unknown;
+
 		bool primed = false;
+		bool int_load_failure = false;
+		bool uint_load_failure = false;
+		bool fp_load_failure = false;
 
 		void prime() {
 			if (!primed) {
@@ -130,29 +134,21 @@ namespace w32 {
 						uint_value = std::stoull(str_value);
 					}
 					catch (...) {
-						uint_value = 0;
+						uint_load_failure = true;
 					}
 
 					try {
 						int_value = std::stoll(str_value);
 					}
 					catch (...) {
-						int_value = 0;
+						int_load_failure = true;
 					}
 
 					try {
 						fp_value = std::stod(str_value);
 					}
 					catch (...) {
-						fp_value = 0.0;
-					}
-
-					if (int_value == 1 && str_value != "1") {
-						int_value = 0;
-					}
-
-					if (uint_value == 1 && str_value != "1") {
-						uint_value = 0;
+						fp_load_failure = true;
 					}
 					break;
 				}
@@ -192,6 +188,18 @@ namespace w32 {
 			}
 
 			str_value = new_value;
+		}
+
+		bool int_good() {
+			return !int_load_failure;
+		}
+
+		bool uint_good() {
+			return !uint_load_failure;
+		}
+
+		bool float_good() {
+			return !fp_load_failure;
 		}
 
 		std::string as_typed_str(sniff_type_e type) {
@@ -365,6 +373,9 @@ namespace w32 {
 			uint_value = other.uint_value;
 			fp_value = other.fp_value;
 			primed = other.primed;
+			int_load_failure = other.int_load_failure;
+			uint_load_failure = other.uint_load_failure;
+			fp_load_failure = other.fp_load_failure;
 			return *this;
 		}
 	};
