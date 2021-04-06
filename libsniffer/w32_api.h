@@ -52,6 +52,7 @@ namespace w32 {
 		uint64_t base = 0;
 		uint64_t region_size = 0;
 		uint64_t page_size = 0;
+		uint64_t additional_buffer = 0;
 		void buffer_if_needed(uint64_t addr_from_base_to_load);
 		uint64_t translate_index(uint64_t i);
 		bool has_failed_load = false;
@@ -63,13 +64,14 @@ namespace w32 {
 			bytes.resize(page_size * NUM_PAGES_TO_BUFFER);
 		}
 
-		void reset(w32::DWORD pid, w32::LPVOID location, w32::SIZE_T size, bool refs_split_record) {
+		void reset(w32::DWORD pid, w32::LPVOID location, w32::SIZE_T size, bool refs_split_record, uint64_t additional_buffer_needed = 8) {
 			has_failed_load = false;
 			max_loaded_mem_location = 0;
 			this->pid = pid;
 			base = (uint64_t)location;
 			region_size = (uint64_t)size;
 			this->refs_split_record = refs_split_record;
+			additional_buffer = additional_buffer_needed;
 			buffer_if_needed(0);
 		}
 

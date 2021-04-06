@@ -284,6 +284,8 @@ namespace sniffer {
 		shared_memory_t mem;
 	};
 
+	void split_large_records(std::vector<w32::memory_region_record_t> & records, uint64_t split_size = 1024 * 1024 * 100);
+
 	bool init(int argc, char * argv[], sniffer_context_t & ctx);
 	bool setup_sniffer_state(sniffer_context_t & ctx);
 	bool update_interactive_args(sniffer_context_t & ctx);

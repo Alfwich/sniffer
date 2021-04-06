@@ -191,7 +191,8 @@ namespace sniffer {
 				region_record.AssociatedPid,
 				region_record.BaseAddress,
 				region_record.RegionSize,
-				region_record.is_split_record && !region_record.is_end_record
+				region_record.is_split_record && !region_record.is_end_record,
+				max(value_to_find.as_string().size() + 1, 8)
 			);
 			uint64_t num_zeros = 8;
 			for (uint64_t i = 0; mem_region_copy.is_good() && i < mem_region_copy.size(); find_next_sniff_loc(i, mem_region_copy, num_zeros)) {
@@ -214,14 +215,20 @@ namespace sniffer {
 					non_str_bytes = &mem_region_copy[i];
 				}
 
-				if (type_is_type(find_type_pred, w32::sniff_type_e::str) && i + value_string_to_find.size() < mem_region_copy.size()) {
-					for (uint64_t j = 0; j < value_to_find.as_string().size(); ++j) {
-						match = mem_region_copy[i + j] == value_to_find.as_string().at(j);
-						if (!match) break;
-					}
+				if (type_is_type(find_type_pred, w32::sniff_type_e::str)) {
+					bool is_allowed_to_go_past_bounds = region_record.is_split_record && !region_record.is_end_record;
+					if (is_allowed_to_go_past_bounds || i + value_to_find.as_string().size() < mem_region_copy.size()) {
+						for (uint64_t j = 0; j < value_to_find.as_string().size(); ++j) {
+							match = mem_region_copy[i + j] == value_to_find.as_string().at(j);
 
-					if (match) {
-						sm->thread_sniffs.at(id).emplace_back(w32::sniff_type_e::str, region_record.AssociatedPid, location);
+							if (!match) {
+								break;
+							}
+						}
+
+						if (match) {
+							sm->thread_sniffs.at(id).emplace_back(w32::sniff_type_e::str, region_record.AssociatedPid, location);
+						}
 					}
 				}
 
@@ -316,7 +323,8 @@ namespace sniffer {
 					(w32::DWORD)work_unit.pid,
 					(w32::LPVOID)work_unit.mem_location,
 					work_unit.type == w32::sniff_type_e::str ? sm->sniff_record->value.as_string().size() : 8,
-					false
+					false,
+					0
 				);
 				if (filter_type_pred != 0) {
 					if (((uint32_t)work_unit.type & filter_type_pred) == 0) {
@@ -507,7 +515,8 @@ namespace sniffer {
 						(w32::DWORD)std::get<1>(mem_location),
 						(w32::LPVOID)std::get<2>(mem_location),
 						size,
-						false
+						false,
+						0
 					);
 					ctx.out_stream << "\tSniffRecord (id=" << i - 1 << ", pid=" << std::get<1>(mem_location) << ", location=";
 					ctx.out_stream << "0x" << std::setw(16) << std::setfill('0') << std::hex << std::get<2>(mem_location) << std::dec;
@@ -671,17 +680,16 @@ namespace sniffer {
 		return index_range_t(min, max, is_good, is_multiple);
 	}
 
-	void split_large_records(std::vector<w32::memory_region_record_t> & records) {
+	void split_large_records(std::vector<w32::memory_region_record_t> & records, uint64_t split_size) {
 		std::vector<w32::memory_region_record_t> split_records;
-		const auto SPLIT_SIZE = 1024 * 1024 * 100;
 		for (auto it = records.begin(); it != records.end();) {
-			if ((*it).RegionSize > SPLIT_SIZE) {
+			if ((*it).RegionSize > split_size) {
 				const auto record_to_split = (*it);
 				const auto max_mem_location_of_split = (uint64_t)record_to_split.BaseAddress + record_to_split.RegionSize;
-				for (uint64_t i = (uint64_t)record_to_split.BaseAddress, max = (uint64_t)record_to_split.BaseAddress + record_to_split.RegionSize; i < max; i += SPLIT_SIZE) {
+				for (uint64_t i = (uint64_t)record_to_split.BaseAddress, max = (uint64_t)record_to_split.BaseAddress + record_to_split.RegionSize; i < max; i += split_size) {
 					auto cpy = w32::memory_region_record_t(record_to_split);
 					cpy.BaseAddress = (w32::PVOID) i;
-					cpy.RegionSize = (i + SPLIT_SIZE) > max ? max - i : SPLIT_SIZE;
+					cpy.RegionSize = (i + split_size) > max ? max - i : split_size;
 					split_records.push_back(cpy);
 					split_records.back().is_split_record = true;
 					split_records.back().is_end_record = false;
@@ -724,6 +732,15 @@ namespace sniffer {
 		return !ctx.args.action_is(sniffer_cmd_e::quit);
 	}
 
+	void create_sniff_work_units_for_context(sniffer_context_t & ctx) {
+		ctx.mem.work_units.clear();
+		for (auto & sniff_type_to_sniffs : ctx.state.sniffs->get_locations()) {
+			for (const auto & mem_location : sniff_type_to_sniffs.second) {
+				ctx.mem.work_units.emplace_back(std::get<1>(mem_location), std::get<2>(mem_location), sniff_type_to_sniffs.first);
+			}
+		}
+	}
+
 	void do_pre_workload(sniffer_context_t & ctx) {
 		profile_timer_t timer(ctx.state.profile, __FUNCTION__);
 
@@ -744,6 +761,10 @@ namespace sniffer {
 		}
 
 		split_large_records(ctx.state.memory_records);
+
+		if (ctx.args.action_is_one({ sniffer_cmd_e::set, sniffer_cmd_e::filter })) {
+			create_sniff_work_units_for_context(ctx);
+		}
 
 		if (ctx.state.memory_records.empty()) {
 			ctx.out_stream << "Could not acquire memory regions for process \"" << ctx.state.executable_to_consider << "\"- is it still running?" << std::endl;
@@ -992,20 +1013,8 @@ namespace sniffer {
 		}
 	}
 
-	void create_sniff_work_units_for_context(sniffer_context_t & ctx) {
-		ctx.mem.work_units.clear();
-		for (auto & sniff_type_to_sniffs : ctx.state.sniffs->get_locations()) {
-			for (const auto & mem_location : sniff_type_to_sniffs.second) {
-				ctx.mem.work_units.emplace_back(std::get<1>(mem_location), std::get<2>(mem_location), sniff_type_to_sniffs.first);
-			}
-		}
-	}
-
 	void do_workload(sniffer_context_t & ctx) {
 		ctx.mem.update_mem_state(&ctx.args, ctx.state.sniffs, &ctx.state.memory_records, ctx.state.num_threads, 1);
-		if (ctx.args.action_is_one({ sniffer_cmd_e::set, sniffer_cmd_e::filter })) {
-			create_sniff_work_units_for_context(ctx);
-		}
 		profile_timer_t timer(ctx.state.profile, __FUNCTION__);
 		for (const auto action : get_actions_for_ctx(ctx)) {
 			std::vector<std::thread> threads;

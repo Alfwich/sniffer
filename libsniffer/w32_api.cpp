@@ -258,7 +258,7 @@ namespace w32 {
 		auto max_chunk_factor = page_size * 64;
 		auto chunk_factor = max_chunk_factor;
 		auto start = (SIZE_T)max_loaded_mem_location + base;
-		auto split_record_additional_size = refs_split_record ? 1024 : 0;
+		auto split_record_additional_size = refs_split_record ? additional_buffer : 0;
 		auto end = min(start + (page_size * NUM_PAGES_TO_BUFFER - 2), (base + region_size + split_record_additional_size));
 		auto i = 0;
 		while (start < end) {
