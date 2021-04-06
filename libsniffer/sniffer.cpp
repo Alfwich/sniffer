@@ -476,46 +476,57 @@ namespace sniffer {
 		return result;
 	}
 
-	void dump_sniffs(w32::sniff_record_set_t * record, uint32_t offset = 0) {
+	void dump_sniffs(w32::sniff_record_set_t * record, uint32_t offset = 0, const char * header_prefix = "") {
 		uint32_t i = 0;
 		bool has_offset_output = false;
 		auto mem_region_copy = w32::memory_region_copy_t();
-		for (auto & type_to_location : record->get_locations()) {
-			for (const auto mem_location : type_to_location.second) {
-
-				if (i++ < offset) {
-					has_offset_output = true;
-					continue;
+		if (!record->empty()) {
+			std::stringstream preamble;
+			preamble << header_prefix << " " << record->size() << " records";
+			for (auto & type_to_location : record->get_locations()) {
+				if (!type_to_location.second.empty()) {
+					preamble << " " << w32::get_sniff_type_str_for_type(type_to_location.first) << "=" << type_to_location.second.size();
 				}
-				else if (has_offset_output) {
-					std::cout << "\t ... [" << (i - 1) << " previous records] ..." << std::endl;
-					has_offset_output = false;
-				}
+			}
+			std::cout << preamble.str() << std::endl;
+			preamble.str("");
+			for (auto & type_to_location : record->get_locations()) {
+				for (const auto mem_location : type_to_location.second) {
 
-				const auto size = std::get<0>(mem_location) == w32::sniff_type_e::str ? record->value.as_string().size() : 8;
-				mem_region_copy.reset(
-					(w32::DWORD)std::get<1>(mem_location),
-					(w32::LPVOID)std::get<2>(mem_location),
-					size,
-					false
-				);
-				std::cout << "\tSniffRecord (id=" << i - 1 << ", pid=" << std::get<1>(mem_location) << ", location=";
-				std::cout << "0x" << std::setw(16) << std::setfill('0') << std::hex << std::get<2>(mem_location) << std::dec;
-				std::cout << ", type=" << w32::get_sniff_type_str_for_type(type_to_location.first) << ", value=" << data_to_string(type_to_location.first, &mem_region_copy[0], size);
-				std::cout << ")" << std::endl;
+					if (i++ < offset) {
+						has_offset_output = true;
+						continue;
+					}
+					else if (has_offset_output) {
+						std::cout << "\t ... [" << (i - 1) << " previous records] ..." << std::endl;
+						has_offset_output = false;
+					}
+
+					const auto size = std::get<0>(mem_location) == w32::sniff_type_e::str ? record->value.as_string().size() : 8;
+					mem_region_copy.reset(
+						(w32::DWORD)std::get<1>(mem_location),
+						(w32::LPVOID)std::get<2>(mem_location),
+						size,
+						false
+					);
+					std::cout << "\tSniffRecord (id=" << i - 1 << ", pid=" << std::get<1>(mem_location) << ", location=";
+					std::cout << "0x" << std::setw(16) << std::setfill('0') << std::hex << std::get<2>(mem_location) << std::dec;
+					std::cout << ", type=" << w32::get_sniff_type_str_for_type(type_to_location.first) << ", value=" << data_to_string(type_to_location.first, &mem_region_copy[0], size);
+					std::cout << ")" << std::endl;
+
+					if (i - offset == 20) {
+						break;
+					}
+				}
 
 				if (i - offset == 20) {
+					if ((record->size() - i) != 0) {
+						std::cout << "\t ... [" << record->size() - i << " more records] ..." << std::endl;
+					}
 					break;
 				}
-			}
 
-			if (i - offset == 20) {
-				if ((record->size() - i) != 0) {
-					std::cout << "\t ... [" << record->size() - i << " more records] ..." << std::endl;
-				}
-				break;
 			}
-
 		}
 	}
 
@@ -1000,25 +1011,27 @@ namespace sniffer {
 	void report_operation_side_effects(sniffer_context_t & ctx) {
 		profile_timer_t timer(ctx.state.profile, __FUNCTION__);
 		if (ctx.args.action_is(sniffer_cmd_e::set)) {
-			std::cout << "Found and set " << ctx.state.sniffs->size() << " sniff records" << std::endl;
-			dump_sniffs(ctx.state.sniffs);
+			dump_sniffs(ctx.state.sniffs, 0, "Set");
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::find)) {
-			std::cout << "Found " << ctx.state.sniffs->size() << " records: " << std::endl;
-			dump_sniffs(ctx.state.sniffs);
+			dump_sniffs(ctx.state.sniffs, 0, "Found");
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::filter)) {
-			std::cout << "Filtered " << ctx.state.in_process_scratch_pad["num_sniffs_removed"] << " records " << ctx.args.at("pred", "ne") << " " << ctx.args.context("the original value") << ". Remaining records: " << std::endl;
-			dump_sniffs(ctx.state.sniffs);
+			std::stringstream prefix;
+			prefix << "Filtered " << ctx.state.in_process_scratch_pad["num_sniffs_removed"] << " records " << ctx.args.at("pred", "ne") << " " << ctx.args.context("the original value");
+			if (!ctx.args.get_arg("type").empty()) {
+				prefix << " and not type " << ctx.args.get_arg("type");
+			}
+			prefix << "\nRemaining";
+			dump_sniffs(ctx.state.sniffs, 0, prefix.str().c_str());
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::list)) {
-			std::cout << "Working with " << ctx.state.sniffs->size() << " sniffs:" << std::endl;
 			try {
 				const auto offset = std::stoul(ctx.args.context("0"));
-				dump_sniffs(ctx.state.sniffs, offset);
+				dump_sniffs(ctx.state.sniffs, offset, "List");
 			}
 			catch (...) {
-				dump_sniffs(ctx.state.sniffs);
+				/* NO OP */
 			}
 		}
 	}
