@@ -1,3 +1,4 @@
+#include <ostream>
 #include <iostream>
 #include <assert.h>
 
@@ -11,38 +12,91 @@ struct test_heap {
 
 static test_heap heap = { 0 };
 
-int main(int argc, char * argv[]) {
+void clear_heap() {
+	ZeroMemory(heap.header, 4096);
+	ZeroMemory(heap.body, 4096 * 128);
+	ZeroMemory(heap.footer, 4096);
+}
+
+w32::memory_region_record_t get_test_heap_memory_region() {
 	auto exec_name_wstring = std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes("tests.exe");
 	auto pids = w32::get_all_pids_for_process_name(exec_name_wstring);
 	auto region_info = w32::MEMORY_BASIC_INFORMATION();
 	w32::memory_region_record_t test_mem_record(pids.front(), region_info);
 	test_mem_record.BaseAddress = &heap;
 	test_mem_record.RegionSize = 4096 * 130;
-	sniffer::sniffer_context_t test;
-	sniffer::init(argc, argv, test);
-	sniffer::setup_sniffer_state(test);
 
-	uint64_t * uint_ptr = (uint64_t *)&heap.body[1024];
-	*uint_ptr = 13371337;
+	return test_mem_record;
+}
 
-	sniffer::update_interactive_args_with_input(test, "find 13371337");
-	sniffer::do_pre_workload(test);
-	test.state.memory_records.clear();
-	test.state.memory_records.push_back(test_mem_record);
-	sniffer::do_workload(test);
-	sniffer::do_post_workload(test);
+void execute_test_command(sniffer::sniffer_context_t & ctx, std::string cmd) {
+	sniffer::update_interactive_args_with_input(ctx, cmd);
+	sniffer::do_pre_workload(ctx);
+	ctx.state.memory_records.clear();
+	ctx.state.memory_records.push_back(get_test_heap_memory_region());
+	sniffer::do_workload(ctx);
+	sniffer::do_post_workload(ctx);
+}
 
-	for (const auto & type_to_mem_locations : test.state.sniffs->get_locations()) {
+std::vector<std::tuple<w32::sniff_type_e, size_t, uint64_t>> get_sniffs(sniffer::sniffer_context_t & ctx) {
+	std::vector<std::tuple<w32::sniff_type_e, size_t, uint64_t>> result;
+
+	for (const auto & type_to_mem_locations : ctx.state.sniffs->get_locations()) {
 		for (const auto & mem_location : type_to_mem_locations.second) {
+			result.push_back(mem_location);
+		}
+	}
+
+	return std::move(result);
+}
+
+namespace tests {
+	void do_simple_tests(sniffer::sniffer_context_t & ctx) {
+		clear_heap();
+
+		uint64_t * uint_ptr = (uint64_t *)&heap.body[1024];
+		*uint_ptr = 13371337;
+
+		execute_test_command(ctx, "find 13371337");
+		for (const auto & mem_location : get_sniffs(ctx)) {
 			const auto location = (uint64_t *)std::get<2>(mem_location);
 			const auto value = *location;
 			assert(location == uint_ptr && value == *uint_ptr);
 		}
+
+		execute_test_command(ctx, "find 13371337 type u64");
+		assert(get_sniffs(ctx).size() == 1);
+		for (const auto & mem_location : get_sniffs(ctx)) {
+			const auto location = (uint64_t *)std::get<2>(mem_location);
+			const auto value = *location;
+			assert(location == uint_ptr && value == *uint_ptr);
+		}
+
+		execute_test_command(ctx, "find 13371337 type f32");
+		assert(get_sniffs(ctx).size() == 0);
+
+		execute_test_command(ctx, "find 13371337 type u64");
+		execute_test_command(ctx, "set 12341234");
+		assert(*uint_ptr == 12341234);
 	}
+}
 
-	sniffer::report_operation_side_effects(test);
+int main(int argc, char * argv[]) {
+
+	std::ostream null_out(0);
+	null_out.setstate(std::ios_base::badbit);
+
+	// Null stdout for test sniffer context
+	sniffer::sniffer_context_t test(null_out);
+
+	sniffer::init(argc, argv, test);
+	sniffer::setup_sniffer_state(test);
+
+	test.state.profile = false;
+
+	tests::do_simple_tests(test);
+
 	sniffer::cleanup_sniffer_state(test);
-
 	std::cout << "All tests pass" << std::endl;
 
 	return 0;

@@ -1,6 +1,7 @@
 #pragma once
 #pragma once
 
+#include <iostream>
 #include <vector>
 #include <string>
 #include <thread>
@@ -274,6 +275,10 @@ namespace sniffer {
 
 	class sniffer_context_t {
 	public:
+		sniffer_context_t(std::ostream & out = std::cout) : out_stream(out) {
+		}
+
+		std::ostream & out_stream;
 		sniffer_args_t args;
 		global_state_t state;
 		shared_memory_t mem;

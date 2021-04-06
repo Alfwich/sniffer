@@ -414,7 +414,7 @@ namespace sniffer {
 		auto result = std::vector<void (*)(int, shared_memory_t *)>();
 		if (ctx.args.action_is(sniffer_cmd_e::find)) {
 			if (ctx.args.context().empty()) {
-				std::cout << "Expected token after find (ie: 'find 450') to be provided when doing a find operation" << std::endl;
+				ctx.out_stream << "Expected token after find (ie: 'find 450') to be provided when doing a find operation" << std::endl;
 				result.clear();
 				return result;
 			}
@@ -423,13 +423,13 @@ namespace sniffer {
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::set)) {
 			if (ctx.args.context().empty()) {
-				std::cout << "Expected token after set (ie: set 1337) to be provided when using action set" << std::endl;
+				ctx.out_stream << "Expected token after set (ie: set 1337) to be provided when using action set" << std::endl;
 				result.clear();
 				return result;
 			}
 
 			if (ctx.state.sniffs->empty()) {
-				std::cout << "Have no sniffs to set - run 'find' to find some memory locations" << std::endl;
+				ctx.out_stream << "Have no sniffs to set - run 'find' to find some memory locations" << std::endl;
 				result.clear();
 				return result;
 			}
@@ -438,7 +438,7 @@ namespace sniffer {
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::filter)) {
 			if (ctx.state.sniffs->empty()) {
-				std::cout << "Expected to find cached sniffs when using action filter - run 'find' to get records" << std::endl;
+				ctx.out_stream << "Expected to find cached sniffs when using action filter - run 'find' to get records" << std::endl;
 				result.clear();
 				return result;
 			}
@@ -476,21 +476,21 @@ namespace sniffer {
 		return result;
 	}
 
-	void dump_sniffs(w32::sniff_record_set_t * record, uint32_t offset = 0, const char * header_prefix = "") {
+	void dump_sniffs(sniffer_context_t & ctx, uint32_t offset = 0, const char * header_prefix = "") {
 		uint32_t i = 0;
 		bool has_offset_output = false;
 		auto mem_region_copy = w32::memory_region_copy_t();
-		if (!record->empty()) {
+		if (!ctx.state.sniffs->empty()) {
 			std::stringstream preamble;
-			preamble << header_prefix << " " << record->size() << " records";
-			for (auto & type_to_location : record->get_locations()) {
+			preamble << header_prefix << " " << ctx.state.sniffs->size() << " records";
+			for (auto & type_to_location : ctx.state.sniffs->get_locations()) {
 				if (!type_to_location.second.empty()) {
 					preamble << " " << w32::get_sniff_type_str_for_type(type_to_location.first) << "=" << type_to_location.second.size();
 				}
 			}
-			std::cout << preamble.str() << std::endl;
+			ctx.out_stream << preamble.str() << std::endl;
 			preamble.str("");
-			for (auto & type_to_location : record->get_locations()) {
+			for (auto & type_to_location : ctx.state.sniffs->get_locations()) {
 				for (const auto mem_location : type_to_location.second) {
 
 					if (i++ < offset) {
@@ -498,21 +498,21 @@ namespace sniffer {
 						continue;
 					}
 					else if (has_offset_output) {
-						std::cout << "\t ... [" << (i - 1) << " previous records] ..." << std::endl;
+						ctx.out_stream << "\t ... [" << (i - 1) << " previous records] ..." << std::endl;
 						has_offset_output = false;
 					}
 
-					const auto size = std::get<0>(mem_location) == w32::sniff_type_e::str ? record->value.as_string().size() : 8;
+					const auto size = std::get<0>(mem_location) == w32::sniff_type_e::str ? ctx.state.sniffs->value.as_string().size() : 8;
 					mem_region_copy.reset(
 						(w32::DWORD)std::get<1>(mem_location),
 						(w32::LPVOID)std::get<2>(mem_location),
 						size,
 						false
 					);
-					std::cout << "\tSniffRecord (id=" << i - 1 << ", pid=" << std::get<1>(mem_location) << ", location=";
-					std::cout << "0x" << std::setw(16) << std::setfill('0') << std::hex << std::get<2>(mem_location) << std::dec;
-					std::cout << ", type=" << w32::get_sniff_type_str_for_type(type_to_location.first) << ", value=" << data_to_string(type_to_location.first, &mem_region_copy[0], size);
-					std::cout << ")" << std::endl;
+					ctx.out_stream << "\tSniffRecord (id=" << i - 1 << ", pid=" << std::get<1>(mem_location) << ", location=";
+					ctx.out_stream << "0x" << std::setw(16) << std::setfill('0') << std::hex << std::get<2>(mem_location) << std::dec;
+					ctx.out_stream << ", type=" << w32::get_sniff_type_str_for_type(type_to_location.first) << ", value=" << data_to_string(type_to_location.first, &mem_region_copy[0], size);
+					ctx.out_stream << ")" << std::endl;
 
 					if (i - offset == 20) {
 						break;
@@ -520,8 +520,8 @@ namespace sniffer {
 				}
 
 				if (i - offset == 20) {
-					if ((record->size() - i) != 0) {
-						std::cout << "\t ... [" << record->size() - i << " more records] ..." << std::endl;
+					if ((ctx.state.sniffs->size() - i) != 0) {
+						ctx.out_stream << "\t ... [" << ctx.state.sniffs->size() - i << " more records] ..." << std::endl;
 					}
 					break;
 				}
@@ -584,37 +584,37 @@ namespace sniffer {
 	sniffer_args_t update_args_for_interactive_mode(sniffer_context_t & ctx, std::string & input) {
 		// TODO: Make this help output generated from sniffer_cmds
 		if (input.empty() || input == "help" || input == "?") {
-			std::cout << "\tSniff memory for attached process and populate sniff records:" << std::endl;
-			std::cout << "\t\t<load> \"EXEC_NAME\"" << std::endl;
-			std::cout << "\t\t<find, f> \"VALUE\" <type <i8|u8|i32|u32|i64|u64|f32|f64|str>> <pred <gt|lt|eq|ne>>" << std::endl;
-			std::cout << "\t\t<list, ls>" << std::endl;
-			std::cout << "\tModify existing sniff records:" << std::endl;
-			std::cout << "\t\t<filter> \"VALUE\" <type <i8|u8|i32|u32|i64|u64|f32|f64|str>> <pred <gt|lt|eq|ne>>" << std::endl;
-			std::cout << "\t\t<pick> <index|range>" << std::endl;
-			std::cout << "\t\t<remove, rm> <id|range>" << std::endl;
-			std::cout << "\t\t<undo>" << std::endl;
-			std::cout << "\t\t<profile>" << std::endl;
-			std::cout << "\tReplace all values in memory:" << std::endl;
-			std::cout << "\t\t<set> \"VALUE\"" << std::endl;
-			std::cout << "\tReplace values in memory continuously:" << std::endl;
-			std::cout << "\t\t<repeat> \"VALUE\" <<id|range>>" << std::endl;
-			std::cout << "\t\t<repeat> <list, ls>" << std::endl;
-			std::cout << "\t\t<repeat> <remove, rm> <id|range>" << std::endl;
-			std::cout << "\t\t<repeat> <clear>" << std::endl;
-			std::cout << "\tContexts to allow multiple sniff sessions at once:" << std::endl;
-			std::cout << "\t\t<context, ctx> \"NEW_CONTEXT\"" << std::endl;
-			std::cout << "\t\t<context, ctx> <list, ls>" << std::endl;
-			std::cout << "\t\t<context, ctx> <remove, rm> \"CONTEXT_NAME\"" << std::endl;
-			std::cout << "\t\t<context, ctx> <clone> \"NEW_CONTEXT\"" << std::endl;
-			std::cout << "\tSniff file load/save:" << std::endl;
-			std::cout << "\t\t<sniff> <load>" << std::endl;
-			std::cout << "\t\t<sniff> <save>" << std::endl;
-			std::cout << "\tExit sniffer:" << std::endl;
-			std::cout << "\t\t<quit, exit, q>" << std::endl;
-			std::cout << "\tDisplay help info:" << std::endl;
-			std::cout << "\t\t<threads, j> # set num threads" << std::endl;
-			std::cout << "\t\t<info>" << std::endl;
-			std::cout << "\t\t<?, help>" << std::endl;
+			ctx.out_stream << "\tSniff memory for attached process and populate sniff records:" << std::endl;
+			ctx.out_stream << "\t\t<load> \"EXEC_NAME\"" << std::endl;
+			ctx.out_stream << "\t\t<find, f> \"VALUE\" <type <i8|u8|i32|u32|i64|u64|f32|f64|str>> <pred <gt|lt|eq|ne>>" << std::endl;
+			ctx.out_stream << "\t\t<list, ls>" << std::endl;
+			ctx.out_stream << "\tModify existing sniff records:" << std::endl;
+			ctx.out_stream << "\t\t<filter> \"VALUE\" <type <i8|u8|i32|u32|i64|u64|f32|f64|str>> <pred <gt|lt|eq|ne>>" << std::endl;
+			ctx.out_stream << "\t\t<pick> <index|range>" << std::endl;
+			ctx.out_stream << "\t\t<remove, rm> <id|range>" << std::endl;
+			ctx.out_stream << "\t\t<undo>" << std::endl;
+			ctx.out_stream << "\t\t<profile>" << std::endl;
+			ctx.out_stream << "\tReplace all values in memory:" << std::endl;
+			ctx.out_stream << "\t\t<set> \"VALUE\"" << std::endl;
+			ctx.out_stream << "\tReplace values in memory continuously:" << std::endl;
+			ctx.out_stream << "\t\t<repeat> \"VALUE\" <<id|range>>" << std::endl;
+			ctx.out_stream << "\t\t<repeat> <list, ls>" << std::endl;
+			ctx.out_stream << "\t\t<repeat> <remove, rm> <id|range>" << std::endl;
+			ctx.out_stream << "\t\t<repeat> <clear>" << std::endl;
+			ctx.out_stream << "\tContexts to allow multiple sniff sessions at once:" << std::endl;
+			ctx.out_stream << "\t\t<context, ctx> \"NEW_CONTEXT\"" << std::endl;
+			ctx.out_stream << "\t\t<context, ctx> <list, ls>" << std::endl;
+			ctx.out_stream << "\t\t<context, ctx> <remove, rm> \"CONTEXT_NAME\"" << std::endl;
+			ctx.out_stream << "\t\t<context, ctx> <clone> \"NEW_CONTEXT\"" << std::endl;
+			ctx.out_stream << "\tSniff file load/save:" << std::endl;
+			ctx.out_stream << "\t\t<sniff> <load>" << std::endl;
+			ctx.out_stream << "\t\t<sniff> <save>" << std::endl;
+			ctx.out_stream << "\tExit sniffer:" << std::endl;
+			ctx.out_stream << "\t\t<quit, exit, q>" << std::endl;
+			ctx.out_stream << "\tDisplay help info:" << std::endl;
+			ctx.out_stream << "\t\t<threads, j> # set num threads" << std::endl;
+			ctx.out_stream << "\t\t<info>" << std::endl;
+			ctx.out_stream << "\t\t<?, help>" << std::endl;
 		}
 
 		return parse_arg_string_into_args_map(input);
@@ -703,10 +703,10 @@ namespace sniffer {
 	bool update_interactive_args(sniffer_context_t & ctx) {
 
 		if (ctx.state.sniffs->empty()) {
-			std::cout << ctx.state.current_context << "> ";
+			ctx.out_stream << ctx.state.current_context << "> ";
 		}
 		else {
-			std::cout << ctx.state.current_context << "(" << ctx.state.sniffs->size() << ")> ";
+			ctx.out_stream << ctx.state.current_context << "(" << ctx.state.sniffs->size() << ")> ";
 		}
 		std::string line;
 		std::getline(std::cin, line);
@@ -746,43 +746,43 @@ namespace sniffer {
 		split_large_records(ctx.state.memory_records);
 
 		if (ctx.state.memory_records.empty()) {
-			std::cout << "Could not acquire memory regions for process \"" << ctx.state.executable_to_consider << "\"- is it still running?" << std::endl;
+			ctx.out_stream << "Could not acquire memory regions for process \"" << ctx.state.executable_to_consider << "\"- is it still running?" << std::endl;
 		}
 
 		if (ctx.args.action_is(sniffer_cmd_e::undo)) {
 			if (ctx.state.sniffs->revert()) {
-				std::cout << "Reverted to previous sniff state " << std::endl;
+				ctx.out_stream << "Reverted to previous sniff state " << std::endl;
 			}
 			else {
-				std::cout << "No previous state to undo" << std::endl;
+				ctx.out_stream << "No previous state to undo" << std::endl;
 			}
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::clear) && !ctx.state.sniffs->empty()) {
-			std::cout << "Clearing all " << ctx.state.sniffs->size() << " sniff records" << std::endl;
+			ctx.out_stream << "Clearing all " << ctx.state.sniffs->size() << " sniff records" << std::endl;
 			ctx.state.sniffs->clear();
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::context)) {
 			if (ctx.args.context_is(sniffer_cmd_e::context_list) || ctx.args.size() == 1) {
-				std::cout << "Registered Contexts:" << std::endl;
+				ctx.out_stream << "Registered Contexts:" << std::endl;
 				for (const auto & context_to_sniffs : ctx.state.context_to_sniffs) {
 					if (context_to_sniffs.first == ctx.state.current_context) {
-						std::cout << "\t" << context_to_sniffs.first << "(" << context_to_sniffs.second.size() << ") [current]" << std::endl;
+						ctx.out_stream << "\t" << context_to_sniffs.first << "(" << context_to_sniffs.second.size() << ") [current]" << std::endl;
 					}
 					else {
-						std::cout << "\t" << context_to_sniffs.first << "(" << context_to_sniffs.second.size() << ")" << std::endl;
+						ctx.out_stream << "\t" << context_to_sniffs.first << "(" << context_to_sniffs.second.size() << ")" << std::endl;
 					}
 				}
 			}
 			else if (ctx.args.context_is(sniffer_cmd_e::context_remove)) {
 				const auto context_to_remove = ctx.args.at("id", ctx.args.arg_at_index(2).c_str());
 				if (ctx.state.context_to_sniffs.count(context_to_remove) == 0) {
-					std::cout << "Context " << ctx.args.at("remove") << " cannot be removed because it does not exist" << std::endl;
+					ctx.out_stream << "Context " << ctx.args.at("remove") << " cannot be removed because it does not exist" << std::endl;
 				}
 				else if (context_to_remove == SNIFF_GLOBAL_CONTEXT) {
-					std::cout << "Cannot delete global context" << std::endl;
+					ctx.out_stream << "Cannot delete global context" << std::endl;
 				}
 				else {
-					std::cout << "Removing sniff context " << context_to_remove << std::endl;
+					ctx.out_stream << "Removing sniff context " << context_to_remove << std::endl;
 					ctx.state.context_to_sniffs.erase(context_to_remove);
 					if (ctx.state.current_context == context_to_remove) {
 						ctx.state.current_context = SNIFF_GLOBAL_CONTEXT;
@@ -793,10 +793,10 @@ namespace sniffer {
 			else if (ctx.args.context_is(sniffer_cmd_e::context_clone)) {
 				const auto context_to_clone_into = ctx.args.at("id", ctx.args.arg_at_index(2).c_str());
 				if (ctx.state.context_to_sniffs.count(context_to_clone_into) != 0) {
-					std::cout << "Cannot clone to new context " << context_to_clone_into << " as it already exists" << std::endl;
+					ctx.out_stream << "Cannot clone to new context " << context_to_clone_into << " as it already exists" << std::endl;
 				}
 				else {
-					std::cout << "Cloning current context to new context " << context_to_clone_into << std::endl;
+					ctx.out_stream << "Cloning current context to new context " << context_to_clone_into << std::endl;
 					ctx.state.context_to_sniffs[context_to_clone_into] = ctx.state.context_to_sniffs.at(ctx.state.current_context);
 					ctx.state.current_context = context_to_clone_into;
 					ctx.state.sniffs = &ctx.state.context_to_sniffs.at(ctx.state.current_context);
@@ -804,7 +804,7 @@ namespace sniffer {
 			}
 			else {
 				const auto new_context = ctx.args.context();
-				std::cout << "Switching context to " << new_context << std::endl;
+				ctx.out_stream << "Switching context to " << new_context << std::endl;
 				if (ctx.state.context_to_sniffs.count(new_context) == 0) {
 					auto _tmp = ctx.state.context_to_sniffs[new_context];
 				}
@@ -819,7 +819,7 @@ namespace sniffer {
 
 			const auto token_to_search_for = ctx.args.context();
 
-			std::cout << "Searching attached process for " << token_to_search_for << " ..." << std::endl;
+			ctx.out_stream << "Searching attached process for " << token_to_search_for << " ..." << std::endl;
 			ctx.state.sniffs->value.set_value(token_to_search_for);
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::remove)) {
@@ -827,10 +827,10 @@ namespace sniffer {
 				const auto ids = get_index_range_from_argument(ctx.args.context());
 				if (ids.is_good) {
 					if (ids.is_multiple) {
-						std::cout << "\tErasing records " << ids.min_index << ":" << (ids.max_index >= ctx.state.sniffs->size() ? ctx.state.sniffs->size() : ids.max_index) << std::endl;
+						ctx.out_stream << "\tErasing records " << ids.min_index << ":" << (ids.max_index >= ctx.state.sniffs->size() ? ctx.state.sniffs->size() : ids.max_index) << std::endl;
 					}
 					else {
-						std::cout << "\tErasing record " << ids.min_index << std::endl;
+						ctx.out_stream << "\tErasing record " << ids.min_index << std::endl;
 					}
 					indicies_t indicies;
 					indicies.start_index = ids.min_index;
@@ -838,7 +838,7 @@ namespace sniffer {
 					ctx.state.sniffs->remove(indicies);
 				}
 				else {
-					std::cout << "Could not erase indexs that do not exist" << std::endl;
+					ctx.out_stream << "Could not erase indexs that do not exist" << std::endl;
 				}
 			}
 			catch (...) {
@@ -846,17 +846,17 @@ namespace sniffer {
 			}
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::profile)) {
-			std::cout << "Turning " << (ctx.state.profile ? "off" : "on") << " profile output" << std::endl;
+			ctx.out_stream << "Turning " << (ctx.state.profile ? "off" : "on") << " profile output" << std::endl;
 			ctx.state.profile = !ctx.state.profile;
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::repeat)) {
 			if (ctx.args.context_is(sniffer_cmd_e::repeat_list) || ctx.args.size() == 1) {
-				std::cout << "Current replace repeats" << std::endl;
+				ctx.out_stream << "Current replace repeats" << std::endl;
 				{
 					std::lock_guard<std::mutex> lock(ctx.state.replace_thread_mutex);
 					size_t i = 0;
 					for (auto & repeat_record : ctx.state.repeat_replace) {
-						std::cout
+						ctx.out_stream
 							<< "\t RepeatReplace (id=" << (i++)
 							<< ", type=" << w32::get_sniff_type_str_for_type(repeat_record.type)
 							<< ", pid=" << std::setw(16) << repeat_record.pid
@@ -884,12 +884,12 @@ namespace sniffer {
 				}
 			}
 			else if (ctx.args.context_is(sniffer_cmd_e::repeat_clear)) {
-				std::cout << "Clearing repeat replaces" << std::endl;
+				ctx.out_stream << "Clearing repeat replaces" << std::endl;
 				std::lock_guard<std::mutex> lock(ctx.state.replace_thread_mutex);
 				ctx.state.repeat_replace.clear();
 			}
 			else {
-				std::cout << "Setting repeat replaces" << std::endl;
+				ctx.out_stream << "Setting repeat replaces" << std::endl;
 				auto value_to_set = w32::sniff_value_t(ctx.args.context());
 				if (!value_to_set.as_string().empty()) {
 					if (ctx.args.count("id") > 0) {
@@ -933,10 +933,10 @@ namespace sniffer {
 				const auto ids = get_index_range_from_argument(ctx.args.context());
 				if (ids.is_good) {
 					if (ids.is_multiple) {
-						std::cout << "Picking sniff set in range " << ids.min_index << " to " << ids.max_index << std::endl;
+						ctx.out_stream << "Picking sniff set in range " << ids.min_index << " to " << ids.max_index << std::endl;
 					}
 					else {
-						std::cout << "Picking sniff value at index " << ids.min_index << std::endl;
+						ctx.out_stream << "Picking sniff value at index " << ids.min_index << std::endl;
 					}
 
 					indicies_t indicies;
@@ -987,7 +987,7 @@ namespace sniffer {
 				ctx.state.executable_to_consider_wstring = std::move(new_exec_name_wstring);
 			}
 			else {
-				std::cout << "Failed to set new executable \"" << new_exec_name << "\" as there are no active PIDs under this - is the name correct and are you running as admin?" << std::endl;
+				ctx.out_stream << "Failed to set new executable \"" << new_exec_name << "\" as there are no active PIDs under this - is the name correct and are you running as admin?" << std::endl;
 			}
 		}
 	}
@@ -1016,17 +1016,17 @@ namespace sniffer {
 			auto max_jobs = ctx.args.action_is(sniffer_cmd_e::find) ? ctx.state.memory_records.size() : ctx.mem.work_units.size();
 
 			while (ctx.mem.get_current_job_index() < max_jobs + 1) {
-				std::cout << "\r\tStarting " << ctx.args.action() << " job " << ctx.mem.get_current_job_index() << " / " << max_jobs << " ... ";
+				ctx.out_stream << "\r\tStarting " << ctx.args.action() << " job " << ctx.mem.get_current_job_index() << " / " << max_jobs << " ... ";
 				std::this_thread::sleep_for(std::chrono::milliseconds(250));
 			}
-			std::cout << "\r\tStarting " << ctx.args.action() << " job " << max_jobs << " / " << max_jobs << " ... done" << std::endl;;
+			ctx.out_stream << "\r\tStarting " << ctx.args.action() << " job " << max_jobs << " / " << max_jobs << " ... done" << std::endl;;
 
-			std::cout << "\tWaiting for jobs to finish ...";
+			ctx.out_stream << "\tWaiting for jobs to finish ...";
 			while (!threads.empty()) {
 				threads.back().join();
 				threads.pop_back();
 			}
-			std::cout << " done" << std::endl;
+			ctx.out_stream << " done" << std::endl;
 
 			ctx.mem.reset_thread_work_state();
 		}
@@ -1051,10 +1051,10 @@ namespace sniffer {
 	void report_operation_side_effects(sniffer_context_t & ctx) {
 		profile_timer_t timer(ctx.state.profile, __FUNCTION__);
 		if (ctx.args.action_is(sniffer_cmd_e::set)) {
-			dump_sniffs(ctx.state.sniffs, 0, "Set");
+			dump_sniffs(ctx, 0, "Set");
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::find)) {
-			dump_sniffs(ctx.state.sniffs, 0, "Found");
+			dump_sniffs(ctx, 0, "Found");
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::filter)) {
 			std::stringstream prefix;
@@ -1063,23 +1063,23 @@ namespace sniffer {
 				prefix << " and not type " << ctx.args.get_arg("type");
 			}
 			prefix << "\nRemaining";
-			dump_sniffs(ctx.state.sniffs, 0, prefix.str().c_str());
+			dump_sniffs(ctx, 0, prefix.str().c_str());
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::list)) {
 			try {
 				const auto offset = std::stoul(ctx.args.context("0"));
-				dump_sniffs(ctx.state.sniffs, offset, "List");
+				dump_sniffs(ctx, offset, "List");
 			}
 			catch (...) {
 				/* NO OP */
 			}
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::set_num_threads)) {
-			std::cout << "Set number of job threads to " << ctx.state.num_threads << std::endl;
+			ctx.out_stream << "Set number of job threads to " << ctx.state.num_threads << std::endl;
 		}
 		else if (ctx.args.action_is(sniffer_cmd_e::set_active_process)) {
 			if (!ctx.args.context().empty()) {
-				std::cout << "Set new executable to sniff \"" << ctx.state.executable_to_consider << "\"" << std::endl;
+				ctx.out_stream << "Set new executable to sniff \"" << ctx.state.executable_to_consider << "\"" << std::endl;
 			}
 			else {
 
@@ -1093,14 +1093,14 @@ namespace sniffer {
 					total_bytes += mem_region.RegionSize;
 				}
 			}
-			std::cout << "Working on executable name \"" << ctx.state.executable_to_consider << "\"" << std::endl;
-			std::cout << "Number of active PIDs for executable " << pids_for_executable.size();
+			ctx.out_stream << "Working on executable name \"" << ctx.state.executable_to_consider << "\"" << std::endl;
+			ctx.out_stream << "Number of active PIDs for executable " << pids_for_executable.size();
 			for (const auto & pid : pids_for_executable) {
-				std::cout << ' ' << pid;
+				ctx.out_stream << ' ' << pid;
 			}
-			std::cout << std::endl;
-			std::cout << "Total bytes for all active pids MB" << total_bytes / 1000000.0 << std::endl;
-			std::cout << "Number of threads to use for jobs " << ctx.state.num_threads << std::endl;
+			ctx.out_stream << std::endl;
+			ctx.out_stream << "Total bytes for all active pids MB" << total_bytes / 1000000.0 << std::endl;
+			ctx.out_stream << "Number of threads to use for jobs " << ctx.state.num_threads << std::endl;
 		}
 	}
 
