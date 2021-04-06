@@ -150,7 +150,7 @@ namespace sniffer {
 		const auto f64 = value.as_float<double_t>();
 		first_bytes.insert(*(uint8_t *)&f64);
 
-		return first_bytes;
+		return std::move(first_bytes);
 	}
 
 	void find_next_sniff_loc(uint64_t & i, w32::memory_region_copy_t & region, uint64_t & num_zeros) {
