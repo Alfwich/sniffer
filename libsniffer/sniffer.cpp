@@ -581,19 +581,11 @@ namespace sniffer {
 		return sniffer_args_t(args, words);
 	}
 
-	sniffer_args_t update_args_for_interactive_mode(sniffer_context_t & ctx) {
-		if (ctx.state.sniffs->empty()) {
-			std::cout << ctx.state.current_context << "> ";
-		}
-		else {
-			std::cout << ctx.state.current_context << "(" << ctx.state.sniffs->size() << ")> ";
-		}
-		std::string line;
-		std::getline(std::cin, line);
-		trim(line);
+	sniffer_args_t update_args_for_interactive_mode(sniffer_context_t & ctx, std::string & input) {
 		// TODO: Make this help output generated from sniffer_cmds
-		if (line.empty() || line == "help" || line == "?") {
+		if (input.empty() || input == "help" || input == "?") {
 			std::cout << "\tSniff memory for attached process and populate sniff records:" << std::endl;
+			std::cout << "\t\t<load> \"EXEC_NAME\"" << std::endl;
 			std::cout << "\t\t<find, f> \"VALUE\" <type <i8|u8|i32|u32|i64|u64|f32|f64|str>> <pred <gt|lt|eq|ne>>" << std::endl;
 			std::cout << "\t\t<list, ls>" << std::endl;
 			std::cout << "\tModify existing sniff records:" << std::endl;
@@ -620,10 +612,12 @@ namespace sniffer {
 			std::cout << "\tExit sniffer:" << std::endl;
 			std::cout << "\t\t<quit, exit, q>" << std::endl;
 			std::cout << "\tDisplay help info:" << std::endl;
+			std::cout << "\t\t<threads, j> # set num threads" << std::endl;
+			std::cout << "\t\t<info>" << std::endl;
 			std::cout << "\t\t<?, help>" << std::endl;
 		}
 
-		return parse_arg_string_into_args_map(line);
+		return parse_arg_string_into_args_map(input);
 	}
 
 
@@ -677,10 +671,55 @@ namespace sniffer {
 		return index_range_t(min, max, is_good, is_multiple);
 	}
 
-	// Returns false when we should end interactive execution
-	bool update_interactive_arg(sniffer_context_t & ctx) {
+	void split_large_records(std::vector<w32::memory_region_record_t> & records) {
+		std::vector<w32::memory_region_record_t> split_records;
+		const auto SPLIT_SIZE = 1024 * 1024 * 100;
+		for (auto it = records.begin(); it != records.end();) {
+			if ((*it).RegionSize > SPLIT_SIZE) {
+				const auto record_to_split = (*it);
+				const auto max_mem_location_of_split = (uint64_t)record_to_split.BaseAddress + record_to_split.RegionSize;
+				for (uint64_t i = (uint64_t)record_to_split.BaseAddress, max = (uint64_t)record_to_split.BaseAddress + record_to_split.RegionSize; i < max; i += SPLIT_SIZE) {
+					auto cpy = w32::memory_region_record_t(record_to_split);
+					cpy.BaseAddress = (w32::PVOID) i;
+					cpy.RegionSize = (i + SPLIT_SIZE) > max ? max - i : SPLIT_SIZE;
+					split_records.push_back(cpy);
+					split_records.back().is_split_record = true;
+					split_records.back().is_end_record = false;
+				}
+				split_records.back().is_end_record = true;
+				it = records.erase(it);
+			}
+			else {
+				++it;
+			}
+		}
 
-		ctx.args = update_args_for_interactive_mode(ctx);
+		for (const auto & split_record : split_records) {
+			records.push_back(split_record);
+		}
+	}
+
+	// Returns false when we should end interactive execution
+	bool update_interactive_args(sniffer_context_t & ctx) {
+
+		if (ctx.state.sniffs->empty()) {
+			std::cout << ctx.state.current_context << "> ";
+		}
+		else {
+			std::cout << ctx.state.current_context << "(" << ctx.state.sniffs->size() << ")> ";
+		}
+		std::string line;
+		std::getline(std::cin, line);
+
+		trim(line);
+
+		ctx.args = update_args_for_interactive_mode(ctx, line);
+
+		return !ctx.args.action_is(sniffer_cmd_e::quit);
+	}
+
+	bool update_interactive_args_with_input(sniffer_context_t & ctx, std::string input) {
+		ctx.args = update_args_for_interactive_mode(ctx, input);
 
 		return !ctx.args.action_is(sniffer_cmd_e::quit);
 	}
@@ -691,6 +730,23 @@ namespace sniffer {
 		// Save sniff state if needed
 		if (ctx.args.action_is_one({ sniffer_cmd_e::find, sniffer_cmd_e::filter, sniffer_cmd_e::remove, sniffer_cmd_e::pick })) {
 			ctx.state.sniffs->commit();
+		}
+
+		// Configure memory regions to work from
+		const auto pids_to_consider = w32::get_all_pids_for_process_name(ctx.state.executable_to_consider_wstring);
+		ctx.state.memory_records.clear();
+		for (auto pid : pids_to_consider) {
+			const auto records_for_pid = w32::get_all_memory_regions_for_pid(pid);
+			ctx.state.memory_records.insert(
+				ctx.state.memory_records.end(),
+				records_for_pid.begin(),
+				records_for_pid.end());
+		}
+
+		split_large_records(ctx.state.memory_records);
+
+		if (ctx.state.memory_records.empty()) {
+			std::cout << "Could not acquire memory regions for process \"" << ctx.state.executable_to_consider << "\"- is it still running?" << std::endl;
 		}
 
 		if (ctx.args.action_is(sniffer_cmd_e::undo)) {
@@ -912,33 +968,27 @@ namespace sniffer {
 				ctx.args.set_context(ctx.state.sniffs->value.as_string());
 			}
 		}
-	}
-
-	void split_large_records(std::vector<w32::memory_region_record_t> & records) {
-		std::vector<w32::memory_region_record_t> split_records;
-		const auto SPLIT_SIZE = 1024 * 1024 * 100;
-		for (auto it = records.begin(); it != records.end();) {
-			if ((*it).RegionSize > SPLIT_SIZE) {
-				const auto record_to_split = (*it);
-				const auto max_mem_location_of_split = (uint64_t)record_to_split.BaseAddress + record_to_split.RegionSize;
-				for (uint64_t i = (uint64_t)record_to_split.BaseAddress, max = (uint64_t)record_to_split.BaseAddress + record_to_split.RegionSize; i < max; i += SPLIT_SIZE) {
-					auto cpy = w32::memory_region_record_t(record_to_split);
-					cpy.BaseAddress = (w32::PVOID) i;
-					cpy.RegionSize = (i + SPLIT_SIZE) > max ? max - i : SPLIT_SIZE;
-					split_records.push_back(cpy);
-					split_records.back().is_split_record = true;
-					split_records.back().is_end_record = false;
-				}
-				split_records.back().is_end_record = true;
-				it = records.erase(it);
+		else if (ctx.args.action_is(sniffer_cmd_e::set_num_threads)) {
+			try {
+				auto num_threads = min(1, std::stol(ctx.args.context()));
+				ctx.state.num_threads = num_threads;
 			}
-			else {
-				++it;
+			catch (...) {
+				// NO-OP
 			}
 		}
+		else if (ctx.args.action_is(sniffer_cmd_e::set_active_process) && !ctx.args.context().empty()) {
+			auto new_exec_name = ctx.args.context();
+			auto new_exec_name_wstring = std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes(new_exec_name);
+			auto test_pid_check = w32::get_all_pids_for_process_name(new_exec_name_wstring);
 
-		for (const auto & split_record : split_records) {
-			records.push_back(split_record);
+			if (!test_pid_check.empty()) {
+				ctx.state.executable_to_consider = std::move(new_exec_name);
+				ctx.state.executable_to_consider_wstring = std::move(new_exec_name_wstring);
+			}
+			else {
+				std::cout << "Failed to set new executable \"" << new_exec_name << "\" as there are no active PIDs under this - is the name correct and are you running as admin?" << std::endl;
+			}
 		}
 	}
 
@@ -952,28 +1002,18 @@ namespace sniffer {
 	}
 
 	void do_workload(sniffer_context_t & ctx) {
-		const auto pids_to_consider = w32::get_all_pids_for_process_name(ctx.state.executable_to_consider_wstring);
-		auto records = std::vector<w32::memory_region_record_t>();
-		for (auto pid : pids_to_consider) {
-			const auto records_for_pid = w32::get_all_memory_regions_for_pid(pid);
-			records.insert(records.end(), records_for_pid.begin(), records_for_pid.end());
-		}
-
-		split_large_records(records);
-
-		ctx.mem.update_mem_state(&ctx.args, ctx.state.sniffs, &records, ctx.state.num_threads, 1);
+		ctx.mem.update_mem_state(&ctx.args, ctx.state.sniffs, &ctx.state.memory_records, ctx.state.num_threads, 1);
 		if (ctx.args.action_is_one({ sniffer_cmd_e::set, sniffer_cmd_e::filter })) {
 			create_sniff_work_units_for_context(ctx);
 		}
-		const auto actions = get_actions_for_ctx(ctx);
 		profile_timer_t timer(ctx.state.profile, __FUNCTION__);
-		for (const auto action : actions) {
+		for (const auto action : get_actions_for_ctx(ctx)) {
 			std::vector<std::thread> threads;
 			for (uint32_t i = 0; i < ctx.state.num_threads; ++i) {
 				threads.push_back(std::thread(action, i, &ctx.mem));
 			}
 
-			auto max_jobs = ctx.args.action_is(sniffer_cmd_e::find) ? records.size() : ctx.mem.work_units.size();
+			auto max_jobs = ctx.args.action_is(sniffer_cmd_e::find) ? ctx.state.memory_records.size() : ctx.mem.work_units.size();
 
 			while (ctx.mem.get_current_job_index() < max_jobs + 1) {
 				std::cout << "\r\tStarting " << ctx.args.action() << " job " << ctx.mem.get_current_job_index() << " / " << max_jobs << " ... ";
@@ -1034,16 +1074,44 @@ namespace sniffer {
 				/* NO OP */
 			}
 		}
+		else if (ctx.args.action_is(sniffer_cmd_e::set_num_threads)) {
+			std::cout << "Set number of job threads to " << ctx.state.num_threads << std::endl;
+		}
+		else if (ctx.args.action_is(sniffer_cmd_e::set_active_process)) {
+			if (!ctx.args.context().empty()) {
+				std::cout << "Set new executable to sniff \"" << ctx.state.executable_to_consider << "\"" << std::endl;
+			}
+			else {
+
+			}
+		}
+		else if (ctx.args.action_is(sniffer_cmd_e::info)) {
+			const auto pids_for_executable = w32::get_all_pids_for_process_name(ctx.state.executable_to_consider_wstring);
+			uint64_t total_bytes = 0;
+			for (const auto & pid : pids_for_executable) {
+				for (const auto & mem_region : w32::get_all_memory_regions_for_pid(pid)) {
+					total_bytes += mem_region.RegionSize;
+				}
+			}
+			std::cout << "Working on executable name \"" << ctx.state.executable_to_consider << "\"" << std::endl;
+			std::cout << "Number of active PIDs for executable " << pids_for_executable.size();
+			for (const auto & pid : pids_for_executable) {
+				std::cout << ' ' << pid;
+			}
+			std::cout << std::endl;
+			std::cout << "Total bytes for all active pids MB" << total_bytes / 1000000.0 << std::endl;
+			std::cout << "Number of threads to use for jobs " << ctx.state.num_threads << std::endl;
+		}
 	}
 
 	bool init(int argc, char * argv[], sniffer_context_t & ctx) {
+		w32::set_debug_priv();
+
 		ctx.args = get_arguments(argc, argv);
 
 		if (ctx.args.empty()) {
 			return false;
 		}
-
-		w32::set_debug_priv();
 
 		return true;
 	}

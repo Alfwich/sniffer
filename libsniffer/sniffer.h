@@ -69,6 +69,10 @@ namespace sniffer {
 			arg_map[key] = new_value;
 		}
 
+		void set_action(const std::string & new_action) {
+			arg_map["action"] = new_action;
+		}
+
 		std::string get_arg(const char * key, const std::string & def = default_str) const {
 			if (arg_map.count(key) > 0) {
 				return arg_map.at(key);
@@ -211,6 +215,7 @@ namespace sniffer {
 		w32::sniff_record_set_t * sniffs;
 		bool is_interactive;
 		uint64_t num_threads;
+		std::vector<w32::memory_region_record_t> memory_records;
 
 		std::mutex replace_thread_mutex;
 		std::vector<repeat_record_t> repeat_replace;
@@ -276,7 +281,8 @@ namespace sniffer {
 
 	bool init(int argc, char * argv[], sniffer_context_t & ctx);
 	bool setup_sniffer_state(sniffer_context_t & ctx);
-	bool update_interactive_arg(sniffer_context_t & ctx);
+	bool update_interactive_args(sniffer_context_t & ctx);
+	bool update_interactive_args_with_input(sniffer_context_t & ctx, std::string input);
 	void do_pre_workload(sniffer_context_t & ctx);
 	void do_workload(sniffer_context_t & ctx);
 	void do_post_workload(sniffer_context_t & ctx);

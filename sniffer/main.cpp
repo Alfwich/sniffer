@@ -16,7 +16,7 @@ int main(int argc, char * argv[]) {
 
 	do {
 		if (main.state.is_interactive) {
-			if (!sniffer::update_interactive_arg(main)) {
+			if (!sniffer::update_interactive_args(main)) {
 				break;
 			}
 		}

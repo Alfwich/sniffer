@@ -1,48 +1,49 @@
 #include <iostream>
+#include <assert.h>
 
 #include "libsniffer/sniffer.h"
 
-#include <iostream>
-#include <iomanip>
-#include <thread>
-#include <chrono>
-#include <vector>
-#include <Windows.h>
-
-class test_mem_t {
-public:
-    int8_t static_int8 = 127;
-    int32_t static_int32 = 13371337;
-    int64_t static_int64 = 1337133713371337;
-    uint8_t static_uint8 = 212;
-    uint32_t static_uint32 = 23371337;
-    uint64_t static_uint64 = 2337133713371337;
-    float_t static_float = 1337.1337f;
-    double_t static_double = 13371337.1337;
-    std::string static_str = "Hello World!";
+struct test_heap {
+	uint8_t header[4096];
+	uint8_t body[4096 * 128];
+	uint8_t footer[4096];
 };
 
-int main(int argc, char * argv[]) {
-    std::vector<test_mem_t> mem;
-    mem.resize(5000);
+static test_heap heap = { 0 };
 
-    while (true) {
-        const test_mem_t & first = mem.front();
-        system("cls");
-        std::cout
-            << "Static values" << std::setprecision(16)
-            << "\n\tstatic_int8 = " << (int32_t)first.static_int8
-            << "\n\tstatic_int32 = " << first.static_int32
-            << "\n\tstatic_int64 = " << first.static_int64
-            << "\n\tstatic_uint8 = " << (int32_t)first.static_uint8
-            << "\n\tstatic_uint32 = " << first.static_uint32
-            << "\n\tstatic_uint64 = " << first.static_uint64
-            << "\n\tstatic_float = " << first.static_float
-            << "\n\tstatic_double = " << first.static_double
-            << "\n\tstatic_str = " << first.static_str
-            << std::endl;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
+int main(int argc, char * argv[]) {
+	auto exec_name_wstring = std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes("tests.exe");
+	auto pids = w32::get_all_pids_for_process_name(exec_name_wstring);
+	auto region_info = w32::MEMORY_BASIC_INFORMATION();
+	w32::memory_region_record_t test_mem_record(pids.front(), region_info);
+	test_mem_record.BaseAddress = &heap;
+	test_mem_record.RegionSize = 4096 * 130;
+	sniffer::sniffer_context_t test;
+	sniffer::init(argc, argv, test);
+	sniffer::setup_sniffer_state(test);
+
+	uint64_t * uint_ptr = (uint64_t *)&heap.body[1024];
+	*uint_ptr = 13371337;
+
+	sniffer::update_interactive_args_with_input(test, "find 13371337");
+	sniffer::do_pre_workload(test);
+	test.state.memory_records.clear();
+	test.state.memory_records.push_back(test_mem_record);
+	sniffer::do_workload(test);
+	sniffer::do_post_workload(test);
+
+	for (const auto & type_to_mem_locations : test.state.sniffs->get_locations()) {
+		for (const auto & mem_location : type_to_mem_locations.second) {
+			const auto location = (uint64_t *)std::get<2>(mem_location);
+			const auto value = *location;
+			assert(location == uint_ptr && value == *uint_ptr);
+		}
+	}
+
+	sniffer::report_operation_side_effects(test);
+	sniffer::cleanup_sniffer_state(test);
+
+	std::cout << "All tests pass" << std::endl;
 
 	return 0;
 }
