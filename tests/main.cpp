@@ -4,6 +4,17 @@
 
 #include "libsniffer/sniffer.h"
 
+class test_reporter_t {
+	std::string test;
+public:
+	test_reporter_t(const char * test) : test(test) {
+		std::cout << "\tExecuting test " << test << "...";
+	}
+	~test_reporter_t() {
+		std::cout << "passed" << std::endl;
+	}
+};
+
 struct test_heap {
 	uint8_t header[4096];
 	uint8_t body[4096 * 128];
@@ -57,27 +68,83 @@ namespace tests {
 		uint64_t * uint_ptr = (uint64_t *)&heap.body[1024];
 		*uint_ptr = 13371337;
 
-		execute_test_command(ctx, "find 13371337");
-		for (const auto & mem_location : get_sniffs(ctx)) {
-			const auto location = (uint64_t *)std::get<2>(mem_location);
-			const auto value = *location;
-			assert(location == uint_ptr && value == *uint_ptr);
+		{
+			test_reporter_t reporter("find 13371337 in heap with one u64 value should return results to the memory location");
+			execute_test_command(ctx, "find 13371337");
+			for (const auto & mem_location : get_sniffs(ctx)) {
+				const auto location = (uint64_t *)std::get<2>(mem_location);
+				const auto value = *location;
+				assert(location == uint_ptr && value == *uint_ptr);
+			}
 		}
 
-		execute_test_command(ctx, "find 13371337 type u64");
-		assert(get_sniffs(ctx).size() == 1);
-		for (const auto & mem_location : get_sniffs(ctx)) {
-			const auto location = (uint64_t *)std::get<2>(mem_location);
-			const auto value = *location;
-			assert(location == uint_ptr && value == *uint_ptr);
+		{
+			test_reporter_t reporter("find 13371337 type u64 in heap with one u64 value should only find one u64 record");
+			execute_test_command(ctx, "find 13371337 type u64");
+			assert(get_sniffs(ctx).size() == 1);
+			for (const auto & mem_location : get_sniffs(ctx)) {
+				const auto location = (uint64_t *)std::get<2>(mem_location);
+				const auto value = *location;
+				const auto type = std::get<0>(mem_location);
+				assert(type == w32::sniff_type_e::u64 && location == uint_ptr && value == *uint_ptr);
+			}
 		}
 
-		execute_test_command(ctx, "find 13371337 type f32");
-		assert(get_sniffs(ctx).size() == 0);
+		{
+			test_reporter_t reporter("find 13371337 type f32 in heap with one u64 value should report no finds");
+			execute_test_command(ctx, "find 13371337 type f32");
+			assert(get_sniffs(ctx).size() == 0);
+		}
 
-		execute_test_command(ctx, "find 13371337 type u64");
-		execute_test_command(ctx, "set 12341234");
-		assert(*uint_ptr == 12341234);
+		{
+			test_reporter_t reporter("set 12341234 in heap with one u64 value should replace value to 12341234");
+			execute_test_command(ctx, "find 13371337 type u64");
+			execute_test_command(ctx, "set 12341234");
+			assert(*uint_ptr == 12341234);
+		}
+	}
+
+	void do_multi_tests(sniffer::sniffer_context_t & ctx) {
+		clear_heap();
+
+		uint64_t * uint_ptr = (uint64_t *)&heap.body[1024];
+		*uint_ptr = 13371337;
+
+		uint64_t * uint_ptr2 = (uint64_t *)&heap.body[4155];
+		*uint_ptr2 = 21212121;
+
+		double_t * dbl_ptr = (double_t *)&heap.body[6541];
+		*dbl_ptr = 1337.1337;
+
+		{
+			test_reporter_t reporter("find 13371337 in heap with 3 values (2xu64, 1xf64) finds correct u64");
+			execute_test_command(ctx, "find 13371337");
+			for (const auto & mem_location : get_sniffs(ctx)) {
+				const auto location = (uint64_t *)std::get<2>(mem_location);
+				const auto value = *location;
+				assert(location == uint_ptr && value == *uint_ptr);
+			}
+		}
+
+		{
+			test_reporter_t reporter("find 21212121 in heap with 3 values (2xu64, 1xf64) finds correct u64");
+			execute_test_command(ctx, "find 21212121");
+			for (const auto & mem_location : get_sniffs(ctx)) {
+				const auto location = (uint64_t *)std::get<2>(mem_location);
+				const auto value = *location;
+				assert(location == uint_ptr2 && value == *uint_ptr2);
+			}
+		}
+
+		{
+			test_reporter_t reporter("find 1337.1337 in heap with 3 values (2xu64, 1xf64) only finds single f64");
+			execute_test_command(ctx, "find 1337.1337");
+			for (const auto & mem_location : get_sniffs(ctx)) {
+				const auto location = (double_t *)std::get<2>(mem_location);
+				const auto value = *location;
+				assert(location == dbl_ptr && value == *dbl_ptr);
+			}
+		}
 	}
 }
 
@@ -94,10 +161,14 @@ int main(int argc, char * argv[]) {
 
 	test.state.profile = false;
 
+	std::cout << "Running Sniffer Tests..." << std::endl;
+
 	tests::do_simple_tests(test);
+	tests::do_multi_tests(test);
+
+	std::cout << "All tests pass" << std::endl;
 
 	sniffer::cleanup_sniffer_state(test);
-	std::cout << "All tests pass" << std::endl;
 
 	return 0;
 }
