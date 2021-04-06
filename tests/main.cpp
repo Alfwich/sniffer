@@ -23,6 +23,7 @@ struct test_heap {
 };
 
 static test_heap heap;
+static uint64_t chunk_size = 0;
 
 void clear_heap() {
 	ZeroMemory(heap.ptr, heap.size);
@@ -44,7 +45,12 @@ void execute_test_command(sniffer::sniffer_context_t & ctx, std::string cmd) {
 	sniffer::do_pre_workload(ctx);
 	ctx.state.memory_records.clear();
 	ctx.state.memory_records.push_back(get_test_heap_memory_region());
-	sniffer::split_large_records(ctx.state.memory_records, 1024 * 4); // Aggressive chunking of records for testing
+	if (chunk_size > 0) {
+		sniffer::split_large_records(ctx.state.memory_records, chunk_size);
+	}
+	else {
+		sniffer::split_large_records(ctx.state.memory_records, 1024 * 1024);
+	}
 	sniffer::do_workload(ctx);
 	sniffer::do_post_workload(ctx);
 }
@@ -517,7 +523,8 @@ int main(int argc, char * argv[]) {
 
 	std::cout << "Running Sniffer Tests..." << std::endl;
 
-	for (auto i = 0; i < 2; ++i) {
+	for (size_t i = 0; i < 2; ++i) {
+		chunk_size = i * 4096;
 		tests::do_simple_tests(test_ctx);
 		tests::do_multi_tests(test_ctx);
 		tests::do_boundary_tests(test_ctx);
