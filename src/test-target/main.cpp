@@ -1,6 +1,4 @@
 #include <iostream>
-
-#include <iostream>
 #include <iomanip>
 #include <thread>
 #include <chrono>

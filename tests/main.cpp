@@ -1,3 +1,7 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+
 #include <ostream>
 #include <iostream>
 #include <sstream>

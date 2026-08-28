@@ -26,35 +26,43 @@ Supported value types are `i8`, `i32`, `i64`, `u8`, `u32`, `u64`, `f32`, `f64`, 
 - Windows
 - Visual Studio 2022 with the **Desktop development with C++** workload
 - MSVC v143 toolset and a Windows 10/11 SDK
+- CMake 3.21 or newer
 
 Administrator privileges may be required to access the target process. Processes protected by Windows or anti-tamper software may remain inaccessible.
 
 ## Build
 
-Open a Visual Studio 2022 Developer Command Prompt in the repository and run:
+Open a terminal in the repository and run:
 
 ```bat
 build-x64-release.bat
 ```
 
-This builds the full solution in `Release|x64`. The main executable is written to:
+This configures CMake and builds every target for 64-bit Windows in Release mode. The main executable is written to:
 
 ```text
-x64\Release\sniffer.exe
+out\build\windows-x64\bin\Release\sniffer.exe
 ```
 
-You can also open `sniffer.sln` in Visual Studio and build the desired configuration there.
+To configure and build another preset directly:
+
+```bat
+cmake --preset windows-x64
+cmake --build --preset windows-x64-debug
+```
+
+Equivalent `windows-x86-debug` and `windows-x86-release` build presets are available. Visual Studio can open the repository folder and read `CMakePresets.json` directly.
 
 ## Quick start
 
 The included `test-target` program exposes a collection of known values in memory, making it useful for trying Sniffer without attaching to another application.
 
-1. Build the solution.
-2. Start `x64\Release\test-target.exe` and leave it running.
+1. Build the project.
+2. Start `out\build\windows-x64\bin\Release\test-target.exe` and leave it running.
 3. In a second elevated terminal, start Sniffer:
 
    ```bat
-   x64\Release\sniffer.exe interactive -pname "test-target.exe"
+   out\build\windows-x64\bin\Release\sniffer.exe interactive -pname "test-target.exe"
    ```
 
 4. Search for the target's 32-bit integer value:
@@ -136,23 +144,26 @@ list
 
 ## Tests
 
-Build the solution, then run:
+Configure, build, and run the registered test with CTest:
 
 ```bat
-x64\Release\tests.exe
+cmake --preset windows-x64
+cmake --build --preset windows-x64-debug
+ctest --preset windows-x64-debug
 ```
 
-The tests exercise numeric and string searches, memory-region chunk boundaries, argument parsing, contexts, result selection/removal, undo, replacement, and continuous replacement.
+Release and x86 test presets are also available. The tests exercise numeric and string searches, memory-region chunk boundaries, argument parsing, contexts, result selection/removal, undo, replacement, and continuous replacement.
 
 ## Project layout
 
 | Path | Description |
 | --- | --- |
-| `libsniffer/` | Static library containing scanning, filtering, replacement, command parsing, and Windows memory access. |
-| `sniffer/` | Console application and interactive loop. |
+| `src/libsniffer/` | Static library containing scanning, filtering, replacement, command parsing, and Windows memory access. |
+| `src/sniffer/` | Console application and interactive loop. |
 | `tests/` | Integration-style tests against a controlled in-process memory buffer. |
-| `test-target/` | Standalone process with known values for manual testing. |
-| `sniffer.sln` | Visual Studio solution containing all four projects. |
+| `src/test-target/` | Standalone process with known values for manual testing. |
+| `CMakeLists.txt` | CMake targets for the library, applications, and tests. |
+| `CMakePresets.json` | Reproducible Visual Studio 2022 configurations for x64 and x86. |
 
 ## Current limitations
 

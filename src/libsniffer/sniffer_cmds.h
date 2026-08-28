@@ -52,4 +52,3 @@ static const std::unordered_map<sniffer_cmd_e, std::vector<std::string> > sniffe
 	{ sniffer_cmd_e::info, { "info" } },
 };
 
-
