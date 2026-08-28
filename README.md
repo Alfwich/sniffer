@@ -168,7 +168,7 @@ The workflow can also be run manually from the repository's **Actions** page. Ma
 | `src/sniffer/` | Console application and interactive loop. |
 | `tests/` | Integration-style tests against a controlled in-process memory buffer. |
 | `src/test-target/` | Standalone process with known values for manual testing. |
-| `Docs/` | Release-page notes for packaged versions. |
+| `docs/` | Release-page notes for packaged versions. |
 | `CMakeLists.txt` | CMake targets for the library, applications, and tests. |
 | `CMakePresets.json` | Reproducible Visual Studio 2022 configurations for x64 and x86. |
 
