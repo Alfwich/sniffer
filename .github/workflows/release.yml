@@ -1,0 +1,67 @@
+name: Prepare release executable
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-x64:
+    name: Build Windows x64 release
+    runs-on: windows-2022
+    timeout-minutes: 20
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Configure
+        run: cmake --preset windows-x64
+
+      - name: Build
+        run: cmake --build --preset windows-x64-release
+
+      - name: Test
+        run: ctest --preset windows-x64-release
+
+      - name: Stage release files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $releaseDirectory = Join-Path $env:GITHUB_WORKSPACE "out/release"
+          $builtExecutable = Join-Path $env:GITHUB_WORKSPACE "out/build/windows-x64/bin/Release/sniffer.exe"
+          $releaseExecutable = Join-Path $releaseDirectory "sniffer-windows-x64.exe"
+
+          New-Item -ItemType Directory -Path $releaseDirectory -Force | Out-Null
+          Copy-Item -LiteralPath $builtExecutable -Destination $releaseExecutable
+
+          $checksum = (Get-FileHash -LiteralPath $releaseExecutable -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$checksum  sniffer-windows-x64.exe" |
+            Set-Content -LiteralPath "$releaseExecutable.sha256" -NoNewline
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: sniffer-windows-x64
+          path: |
+            out/release/sniffer-windows-x64.exe
+            out/release/sniffer-windows-x64.exe.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach files to GitHub Release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload $env:RELEASE_TAG `
+            "out/release/sniffer-windows-x64.exe" `
+            "out/release/sniffer-windows-x64.exe.sha256" `
+            --clobber

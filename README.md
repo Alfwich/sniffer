@@ -154,6 +154,12 @@ ctest --preset windows-x64-debug
 
 Release and x86 test presets are also available. The tests exercise numeric and string searches, memory-region chunk boundaries, argument parsing, contexts, result selection/removal, undo, replacement, and continuous replacement.
 
+## Releases
+
+Publishing a GitHub Release triggers the Windows release workflow. It builds and tests the x64 Release configuration, then attaches `sniffer-windows-x64.exe` and its SHA-256 checksum to the release.
+
+The workflow can also be run manually from the repository's **Actions** page. Manual runs publish the executable and checksum as a workflow artifact without modifying a GitHub Release.
+
 ## Project layout
 
 | Path | Description |
@@ -162,6 +168,7 @@ Release and x86 test presets are also available. The tests exercise numeric and 
 | `src/sniffer/` | Console application and interactive loop. |
 | `tests/` | Integration-style tests against a controlled in-process memory buffer. |
 | `src/test-target/` | Standalone process with known values for manual testing. |
+| `Docs/` | Release-page notes for packaged versions. |
 | `CMakeLists.txt` | CMake targets for the library, applications, and tests. |
 | `CMakePresets.json` | Reproducible Visual Studio 2022 configurations for x64 and x86. |
 
