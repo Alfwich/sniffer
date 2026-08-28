@@ -638,7 +638,7 @@ namespace sniffer {
 					do_mem_replace(replace_record.pid, replace_record.location, replace_record.type, replace_record.value);
 				}
 			}
-			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 	}
 
@@ -767,7 +767,7 @@ namespace sniffer {
 		}
 
 		if (ctx.state.memory_records.empty()) {
-			ctx.out_stream << "Could not acquire memory regions for process \"" << ctx.state.executable_to_consider << "\"- is it still running?" << std::endl;
+			ctx.out_stream << "Could not acquire memory regions for process \"" << ctx.state.executable_to_consider << "\" - is it still running?" << std::endl;
 		}
 
 		if (ctx.args.action_is(sniffer_cmd_e::undo)) {
@@ -1148,7 +1148,10 @@ namespace sniffer {
 	}
 
 	void cleanup_sniffer_state(sniffer_context_t & ctx) {
-		ctx.state.replace_thread_is_running = false;
+		{
+			std::lock_guard<std::mutex> lock_guard(ctx.state.replace_thread_mutex);
+			ctx.state.replace_thread_is_running = false;
+		}
 		ctx.state.replace_thread.join();
 		w32::clear_open_handles(w32::get_all_pids_for_process_name(ctx.state.executable_to_consider_wstring));
 	}
