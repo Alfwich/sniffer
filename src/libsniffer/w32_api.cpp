@@ -5,6 +5,9 @@
 #include <unordered_map>
 #include <fstream>
 #include <iostream>
+#include <cstring>
+#include <limits>
+#include <algorithm>
 
 #include "processthreadsapi.h"
 #include "errhandlingapi.h"
@@ -16,8 +19,11 @@
 
 namespace w32 {
 	std::unordered_map<DWORD, HANDLE> open_handles;
+	std::mutex open_handles_mutex;
+	std::mutex memory_write_mutex;
 
 	HANDLE open_process(DWORD pid) {
+		std::lock_guard<std::mutex> lock(open_handles_mutex);
 		if (open_handles.count(pid) == 0) {
 			open_handles[pid] = OpenProcess(
 				PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION,
@@ -30,6 +36,7 @@ namespace w32 {
 	}
 
 	void clear_open_handles(const std::vector<DWORD> pids) {
+		std::lock_guard<std::mutex> lock(open_handles_mutex);
 		for (auto pid : pids) {
 			if (open_handles.count(pid) != 0) {
 				CloseHandle(open_handles.at(pid));
@@ -71,7 +78,10 @@ namespace w32 {
 			return;
 		}
 
-		Process32First(processesSnapshot, &processInfo);
+		if (!Process32First(processesSnapshot, &processInfo)) {
+			CloseHandle(processesSnapshot);
+			return;
+		}
 		out_vec.push_back(processInfo);
 
 		while (Process32Next(processesSnapshot, &processInfo)) {
@@ -151,23 +161,35 @@ namespace w32 {
 		return find_processId(proc_name);
 	}
 
-	void set_bytes_at_location_for_pid(uint64_t pid, uint64_t location, uint8_t * bytes, size_t size) {
-		if (pid == 0 || location == 0) return;
+	bool set_bytes_at_location_for_pid(uint64_t pid, uint64_t location, const uint8_t * bytes, size_t size) {
+		if (pid == 0 || location == 0 || bytes == nullptr) return false;
+		if (size == 0) return true;
+
+		std::lock_guard<std::mutex> lock(memory_write_mutex);
 
 		const auto proc_handle = open_process((w32::DWORD)pid);
+		if (proc_handle == nullptr) return false;
 
-		static DWORD oldprotect;
 		LPVOID dst = (LPVOID)((SIZE_T)location);
-		VirtualProtectEx(proc_handle, dst, size, PAGE_EXECUTE_READWRITE, &oldprotect);
 		SIZE_T num_bytes_written = 0;
-		auto wpm_result = WriteProcessMemory(
+		auto write_succeeded = WriteProcessMemory(
 			proc_handle,
 			dst,
-			(LPVOID)bytes,
+			bytes,
 			size,
 			&num_bytes_written
 		);
-		VirtualProtectEx(proc_handle, dst, size, oldprotect, &oldprotect);
+		if (write_succeeded && num_bytes_written == size) return true;
+
+		DWORD old_protect = 0;
+		if (!VirtualProtectEx(proc_handle, dst, size, PAGE_EXECUTE_READWRITE, &old_protect)) return false;
+
+		num_bytes_written = 0;
+		write_succeeded = WriteProcessMemory(proc_handle, dst, bytes, size, &num_bytes_written);
+
+		DWORD ignored_protect = 0;
+		const auto restore_succeeded = VirtualProtectEx(proc_handle, dst, size, old_protect, &ignored_protect);
+		return write_succeeded && num_bytes_written == size && restore_succeeded;
 	}
 
 	const char * get_sniff_type_str_for_type(sniff_type_e type) {
@@ -247,59 +269,91 @@ namespace w32 {
 		return static_cast<uint64_t>(sysinfo.dwPageSize);
 	}
 
-	void memory_region_copy_t::buffer_if_needed(uint64_t addr_from_base_to_load) {
-		if (region_size == 0 || base == 0 || addr_from_base_to_load < max_loaded_mem_location) return;
+	uint64_t memory_region_copy_t::accessible_size() const {
+		if (!refs_split_record) return region_size;
+		if (additional_buffer > (std::numeric_limits<uint64_t>::max)() - region_size) {
+			return (std::numeric_limits<uint64_t>::max)();
+		}
+		return region_size + additional_buffer;
+	}
 
-		const auto proc_handle = open_process((w32::DWORD)pid);
+	bool memory_region_copy_t::contains(uint64_t offset, size_t length) const {
+		const auto available = accessible_size();
+		return offset <= available && static_cast<uint64_t>(length) <= available - offset;
+	}
 
-		w32::SIZE_T total_bytes_read = 0;
-		w32::SIZE_T num_bytes_read = 0;
-
-		auto max_chunk_factor = page_size * 64;
-		auto chunk_factor = max_chunk_factor;
-		auto start = (SIZE_T)max_loaded_mem_location + base;
-		auto split_record_additional_size = refs_split_record ? additional_buffer : 0;
-		auto end = min(start + (page_size * NUM_PAGES_TO_BUFFER - 2), (base + region_size + split_record_additional_size));
-		auto i = 0;
-		while (start < end) {
-			auto translated_index = translate_index(addr_from_base_to_load + total_bytes_read);
-			auto num_bytes_to_read = min(chunk_factor, min(end - start, bytes.size() - translated_index));
-			auto rpm_result = ReadProcessMemory(
-				proc_handle,
-				(LPVOID)start,
-				(LPVOID)&bytes[translated_index],
-				num_bytes_to_read,
-				&num_bytes_read
-			);
-
-			if (rpm_result != 0 && chunk_factor < max_chunk_factor) {
-				chunk_factor = min(chunk_factor * 4, max_chunk_factor);
-			}
-
-			// Attempt one more byte read before exiting
-			if (rpm_result == 0 && chunk_factor > 1) {
-				chunk_factor = 1;
-				continue;
-			}
-			else if (rpm_result == 0) {
-				has_failed_load = true;
-				break;
-			}
-
-			total_bytes_read += num_bytes_read;
-			start += num_bytes_read;
+	bool memory_region_copy_t::buffer_if_needed(uint64_t addr_from_base_to_load) {
+		if (region_size == 0 || base == 0 || has_failed_load || !contains(addr_from_base_to_load, 1)) return false;
+		if (addr_from_base_to_load < max_loaded_mem_location) {
+			return max_loaded_mem_location - addr_from_base_to_load <= bytes.size();
 		}
 
-		max_loaded_mem_location += total_bytes_read;
+		const auto proc_handle = open_process((w32::DWORD)pid);
+		if (proc_handle == nullptr) {
+			has_failed_load = true;
+			return false;
+		}
+
+		auto max_chunk_factor = page_size * 64;
+		while (addr_from_base_to_load >= max_loaded_mem_location) {
+			const auto window_start = max_loaded_mem_location;
+			const auto bytes_remaining = accessible_size() - window_start;
+			const auto window_size = (std::min<uint64_t>)(bytes.size(), bytes_remaining);
+			w32::SIZE_T total_bytes_read = 0;
+			auto chunk_factor = max_chunk_factor;
+
+			while (total_bytes_read < window_size) {
+				const auto logical_offset = window_start + total_bytes_read;
+				const auto translated_index = translate_index(logical_offset);
+				const auto bytes_to_window_end = window_size - total_bytes_read;
+				const auto bytes_to_buffer_end = bytes.size() - translated_index;
+				const auto num_bytes_to_read = (std::min<uint64_t>)(chunk_factor, (std::min<uint64_t>)(bytes_to_window_end, bytes_to_buffer_end));
+				w32::SIZE_T num_bytes_read = 0;
+				const auto rpm_result = ReadProcessMemory(
+					proc_handle,
+					(LPVOID)(base + logical_offset),
+					&bytes[translated_index],
+					num_bytes_to_read,
+					&num_bytes_read
+				);
+
+				if (rpm_result == 0) {
+					if (chunk_factor > 1) {
+						chunk_factor = 1;
+						continue;
+					}
+					has_failed_load = true;
+					return false;
+				}
+				if (num_bytes_read == 0) {
+					has_failed_load = true;
+					return false;
+				}
+
+				total_bytes_read += num_bytes_read;
+				if (chunk_factor < max_chunk_factor) {
+					chunk_factor = min(chunk_factor * 4, max_chunk_factor);
+				}
+			}
+
+			max_loaded_mem_location += total_bytes_read;
+		}
+		return true;
 	}
 
 	uint64_t memory_region_copy_t::translate_index(uint64_t i) {
 		return i % bytes.size();
 	}
 
-	uint8_t & memory_region_copy_t::operator[](uint64_t i) {
-		buffer_if_needed(i);
-		return bytes[translate_index(i)];
+	bool memory_region_copy_t::read_bytes(uint64_t offset, void * destination, size_t length) {
+		if (destination == nullptr || !contains(offset, length) || has_failed_load) return false;
+		auto output = static_cast<uint8_t *>(destination);
+		for (size_t i = 0; i < length; ++i) {
+			const auto current_offset = offset + i;
+			if (!buffer_if_needed(current_offset) || current_offset >= max_loaded_mem_location) return false;
+			output[i] = bytes[translate_index(current_offset)];
+		}
+		return true;
 	}
 
 	std::mutex sniff_record_set_location_mutex;
@@ -313,40 +367,63 @@ namespace w32 {
 		locations[std::get<0>(tuple)].emplace(tuple);
 	}
 
-	std::string data_to_string(sniff_type_e type, uint8_t * data, size_t size) {
+	template <class T>
+	bool copy_value_from_bytes(const uint8_t * data, size_t size, T & value) {
+		if (data == nullptr || size < sizeof(T)) return false;
+		std::memcpy(&value, data, sizeof(value));
+		return true;
+	}
+
+	std::string data_to_string(sniff_type_e type, const uint8_t * data, size_t size) {
 		std::string result;
 
 		switch (type) {
-		case sniff_type_e::i8:
-			result = std::to_string(*(int8_t *)data);
+		case sniff_type_e::i8: {
+			int8_t value = 0;
+			if (copy_value_from_bytes(data, size, value)) result = std::to_string(value);
+		}
 			break;
 
-		case sniff_type_e::i32:
-			result = std::to_string(*(int32_t *)data);
+		case sniff_type_e::i32: {
+			int32_t value = 0;
+			if (copy_value_from_bytes(data, size, value)) result = std::to_string(value);
+		}
 			break;
 
-		case sniff_type_e::i64:
-			result = std::to_string(*(int64_t *)data);
+		case sniff_type_e::i64: {
+			int64_t value = 0;
+			if (copy_value_from_bytes(data, size, value)) result = std::to_string(value);
+		}
 			break;
 
-		case sniff_type_e::u8:
-			result = std::to_string(*(uint8_t *)data);
+		case sniff_type_e::u8: {
+			uint8_t value = 0;
+			if (copy_value_from_bytes(data, size, value)) result = std::to_string(value);
+		}
 			break;
 
-		case sniff_type_e::u32:
-			result = std::to_string(*(uint32_t *)data);
+		case sniff_type_e::u32: {
+			uint32_t value = 0;
+			if (copy_value_from_bytes(data, size, value)) result = std::to_string(value);
+		}
 			break;
 
-		case sniff_type_e::u64:
-			result = std::to_string(*(uint64_t *)data);
+		case sniff_type_e::u64: {
+			uint64_t value = 0;
+			if (copy_value_from_bytes(data, size, value)) result = std::to_string(value);
+		}
 			break;
 
-		case sniff_type_e::f32:
-			result = std::to_string(*(float_t *)data);
+		case sniff_type_e::f32: {
+			float_t value = 0;
+			if (copy_value_from_bytes(data, size, value)) result = std::to_string(value);
+		}
 			break;
 
-		case sniff_type_e::f64:
-			result = std::to_string(*(double_t *)data);
+		case sniff_type_e::f64: {
+			double_t value = 0;
+			if (copy_value_from_bytes(data, size, value)) result = std::to_string(value);
+		}
 			break;
 
 		case sniff_type_e::str:

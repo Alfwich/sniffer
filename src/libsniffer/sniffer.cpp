@@ -13,54 +13,107 @@
 #include <regex>
 #include <unordered_map>
 #include <stdio.h>
+#include <cstring>
+#include <limits>
 
 #include "profile_timer.h"
 #include "utils.h"
 #include "sniffer_cmds.h"
 
 namespace sniffer {
+	template <class T>
+	bool sniff_cmp(const std::string & pred, const T & a, const T & b) {
+		if (pred == "lt") return a < b;
+		if (pred == "gt") return a > b;
+		if (pred == "eq") return a == b;
+		if (pred == "ne") return a != b;
+		return false;
+	}
 
-	bool do_mem_replace(uint64_t pid, uint64_t mem_location, w32::sniff_type_e type, w32::sniff_value_t & value_to_set) {
+	template <class T>
+	bool read_value(w32::memory_region_copy_t & region, uint64_t offset, T & value) {
+		uint8_t bytes[sizeof(T)] = {};
+		if (!region.read_bytes(offset, bytes, sizeof(bytes))) return false;
+		std::memcpy(&value, bytes, sizeof(value));
+		return true;
+	}
+
+	template <class T>
+	bool signed_value_fits(w32::sniff_value_t & value) {
+		if (!value.int_good()) return false;
+		const auto parsed = value.as_int<int64_t>();
+		return parsed >= static_cast<int64_t>((std::numeric_limits<T>::min)())
+			&& parsed <= static_cast<int64_t>((std::numeric_limits<T>::max)());
+	}
+
+	template <class T>
+	bool unsigned_value_fits(w32::sniff_value_t & value) {
+		return value.uint_good()
+			&& value.as_uint<uint64_t>() <= static_cast<uint64_t>((std::numeric_limits<T>::max)());
+	}
+
+	size_t sniff_type_size(w32::sniff_type_e type, size_t string_size = 0) {
+		switch (type) {
+		case w32::sniff_type_e::i8:
+		case w32::sniff_type_e::u8:
+			return 1;
+		case w32::sniff_type_e::i32:
+		case w32::sniff_type_e::u32:
+		case w32::sniff_type_e::f32:
+			return 4;
+		case w32::sniff_type_e::i64:
+		case w32::sniff_type_e::u64:
+		case w32::sniff_type_e::f64:
+			return 8;
+		case w32::sniff_type_e::str:
+			return string_size;
+		default:
+			return 0;
+		}
+	}
+
+	bool do_mem_replace(uint64_t pid, uint64_t mem_location, w32::sniff_type_e type, w32::sniff_value_t & value_to_set, size_t max_string_size = 0) {
 		switch (type) {
 		case w32::sniff_type_e::str: {
 			const auto value = value_to_set.as_string();
-			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value[0], value.size());
+			if (value.size() > max_string_size) return false;
+			return w32::set_bytes_at_location_for_pid(pid, mem_location, reinterpret_cast<const uint8_t *>(value.data()), value.size());
 		} break;
 
 		case w32::sniff_type_e::i8: {
 			auto value = value_to_set.as_int<int8_t>();
-			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value, 1);
+			return w32::set_bytes_at_location_for_pid(pid, mem_location, reinterpret_cast<const uint8_t *>(&value), sizeof(value));
 		} break;
 		case w32::sniff_type_e::i32: {
 			auto value = value_to_set.as_int<int32_t>();
-			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value, 4);
+			return w32::set_bytes_at_location_for_pid(pid, mem_location, reinterpret_cast<const uint8_t *>(&value), sizeof(value));
 		} break;
 		case w32::sniff_type_e::i64: {
 			auto value = value_to_set.as_int<int64_t>();
-			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value, 8);
+			return w32::set_bytes_at_location_for_pid(pid, mem_location, reinterpret_cast<const uint8_t *>(&value), sizeof(value));
 		} break;
 
 		case w32::sniff_type_e::u8: {
 			auto value = value_to_set.as_uint<uint8_t>();
-			w32::set_bytes_at_location_for_pid(pid, mem_location, &value, 8);
+			return w32::set_bytes_at_location_for_pid(pid, mem_location, &value, sizeof(value));
 		} break;
 		case w32::sniff_type_e::u32: {
 			auto value = value_to_set.as_uint<uint32_t>();
-			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value, 4);
+			return w32::set_bytes_at_location_for_pid(pid, mem_location, reinterpret_cast<const uint8_t *>(&value), sizeof(value));
 		} break;
 		case w32::sniff_type_e::u64: {
 			auto value = value_to_set.as_uint<uint64_t>();
-			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value, 8);
+			return w32::set_bytes_at_location_for_pid(pid, mem_location, reinterpret_cast<const uint8_t *>(&value), sizeof(value));
 		} break;
 
 		case w32::sniff_type_e::f32: {
 			auto value = value_to_set.as_float<float_t>();
-			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value, 4);
+			return w32::set_bytes_at_location_for_pid(pid, mem_location, reinterpret_cast<const uint8_t *>(&value), sizeof(value));
 		} break;
 
 		case w32::sniff_type_e::f64: {
 			auto value = value_to_set.as_float<double_t>();
-			w32::set_bytes_at_location_for_pid(pid, mem_location, (uint8_t *)&value, 8);
+			return w32::set_bytes_at_location_for_pid(pid, mem_location, reinterpret_cast<const uint8_t *>(&value), sizeof(value));
 		} break;
 
 		case w32::sniff_type_e::unknown:
@@ -69,7 +122,7 @@ namespace sniffer {
 			break;
 		}
 
-		return true;
+		return false;
 	}
 
 	void do_set(int id, shared_memory_t * sm) {
@@ -78,7 +131,7 @@ namespace sniffer {
 		indicies_t indexs;
 		for (sm->get_next_job(indexs); indexs.start_index < sm->work_units.size(); sm->get_next_job(indexs)) {
 			auto & work_unit = sm->work_units.at(indexs.start_index);
-			do_mem_replace(work_unit.pid, work_unit.mem_location, work_unit.type, value_to_set);
+			do_mem_replace(work_unit.pid, work_unit.mem_location, work_unit.type, value_to_set, sm->sniff_record->value.as_string().size());
 		}
 	}
 
@@ -90,65 +143,36 @@ namespace sniffer {
 		return type_is_type(a, b) || a == 0;
 	}
 
-	bool sniff_cmp_i(std::string & pred, uint64_t a, uint64_t b) {
-		if (pred == "lt") {
-			return a < b;
-		}
-		else if (pred == "gt") {
-			return a > b;
-		}
-		else if (pred == "eq") {
-			return a == b;
-		}
-		else if (pred == "ne") {
-			return a != b;
-		}
-
-		return false;
-	}
-
-	bool sniff_cmp_f(std::string & pred, double_t a, double_t b) {
-		if (pred == "lt") {
-			return a < b;
-		}
-		else if (pred == "gt") {
-			return a > b;
-		}
-		else if (pred == "eq") {
-			return a == b;
-		}
-		else if (pred == "ne") {
-			return a != b;
-		}
-
-		return false;
-	}
-
 	std::set<uint8_t> getFirstBytes(w32::sniff_value_t & value) {
+		auto first_byte_of = [](const auto & typed_value) {
+			uint8_t first_byte = 0;
+			std::memcpy(&first_byte, &typed_value, sizeof(first_byte));
+			return first_byte;
+		};
 		std::set<uint8_t> first_bytes;
 		const auto str = value.as_string();
-		first_bytes.insert(str[0]);
+		if (!str.empty()) first_bytes.insert(static_cast<uint8_t>(str[0]));
 
 		first_bytes.insert(value.as_uint<uint8_t>());
 		first_bytes.insert(value.as_int<int8_t>());
 
 		const auto i32 = value.as_int<int32_t>();
-		first_bytes.insert(*((uint8_t *)&i32));
+		first_bytes.insert(first_byte_of(i32));
 
 		const auto i64 = value.as_int<int64_t>();
-		first_bytes.insert(*(uint8_t *)&i64);
+		first_bytes.insert(first_byte_of(i64));
 
 		const auto u32 = value.as_int<uint32_t>();
-		first_bytes.insert(*(uint8_t *)&u32);
+		first_bytes.insert(first_byte_of(u32));
 
 		const auto u64 = value.as_int<uint64_t>();
-		first_bytes.insert(*(uint8_t *)&u64);
+		first_bytes.insert(first_byte_of(u64));
 
 		const auto f32 = value.as_float<float_t>();
-		first_bytes.insert(*(uint8_t *)&f32);
+		first_bytes.insert(first_byte_of(f32));
 
 		const auto f64 = value.as_float<double_t>();
-		first_bytes.insert(*(uint8_t *)&f64);
+		first_bytes.insert(first_byte_of(f64));
 
 		return std::move(first_bytes);
 	}
@@ -161,7 +185,8 @@ namespace sniffer {
 		else {
 			i++;
 			uint64_t num_zeros_skipped = 0;
-			while (region[i] == '\0' && i < region.size() && region.is_good()) {
+			uint8_t value = 0;
+			while (i < region.size() && region.is_good() && region.read_byte(i, value) && value == '\0') {
 				++i;
 				num_zeros_skipped++;
 			}
@@ -179,10 +204,6 @@ namespace sniffer {
 		auto value_to_find = w32::sniff_value_t(value_string_to_find.c_str());
 		auto first_bytes = getFirstBytes(value_to_find);
 		bool match = false;
-		std::vector<w32::sniff_type_e> type_matches;
-		uint8_t bound_bytes[8] = { 0 };
-		uint8_t * non_str_bytes;
-		auto min_num_int_bytes = value_to_find.min_num_int_bytes();
 		auto mem_region_copy = w32::memory_region_copy_t();
 		indicies_t indexs;
 		for (sm->get_next_job(indexs); indexs.start_index < sm->records->size(); sm->get_next_job(indexs)) {
@@ -197,29 +218,23 @@ namespace sniffer {
 			uint64_t num_zeros = 8;
 			for (uint64_t i = 0; mem_region_copy.is_good() && i < mem_region_copy.size(); find_next_sniff_loc(i, mem_region_copy, num_zeros)) {
 				match = false;
-				type_matches.clear();
 
 				uint64_t location = (uint64_t)(region_record.BaseAddress) + i;
+				uint8_t first_byte = 0;
 
-				if (first_bytes.count(mem_region_copy[i]) == 0) {
+				if (!mem_region_copy.read_byte(i, first_byte)) break;
+				if (find_pred_str == "eq" && first_bytes.count(first_byte) == 0) {
 					continue;
 				}
 
-				if (mem_region_copy.index_lies_on_boundary(i)) {
-					for (auto j = 0; j < 8 && i + j < mem_region_copy.size(); ++j) {
-						bound_bytes[j] = mem_region_copy[i + j];
-					}
-					non_str_bytes = bound_bytes;
-				}
-				else {
-					non_str_bytes = &mem_region_copy[i];
-				}
-
 				if (type_is_type(find_type_pred, w32::sniff_type_e::str)) {
-					bool is_allowed_to_go_past_bounds = region_record.is_split_record && !region_record.is_end_record;
-					if (is_allowed_to_go_past_bounds || i + value_to_find.as_string().size() < mem_region_copy.size()) {
+					const auto & string_to_find = value_to_find.as_string();
+					if (mem_region_copy.contains(i, string_to_find.size())) {
+						match = true;
 						for (uint64_t j = 0; j < value_to_find.as_string().size(); ++j) {
-							match = mem_region_copy[i + j] == value_to_find.as_string().at(j);
+							uint8_t byte = 0;
+							match = mem_region_copy.read_byte(i + j, byte)
+								&& byte == static_cast<uint8_t>(string_to_find.at(j));
 
 							if (!match) {
 								break;
@@ -232,53 +247,60 @@ namespace sniffer {
 					}
 				}
 
-				if (min_num_int_bytes <= 1 && value_to_find.uint_good() && type_is_type(find_type_pred, w32::sniff_type_e::u8)) {
-					match = sniff_cmp_i(find_pred_str, *non_str_bytes, value_to_find.as_uint<uint8_t>());
+				if (unsigned_value_fits<uint8_t>(value_to_find) && type_is_type(find_type_pred, w32::sniff_type_e::u8)) {
+					uint8_t val = 0;
+					match = read_value(mem_region_copy, i, val)
+						&& sniff_cmp(find_pred_str, val, value_to_find.as_uint<uint8_t>());
 
 					if (match) {
 						sm->thread_sniffs.at(id).emplace_back(w32::sniff_type_e::u8, region_record.AssociatedPid, location);
 					}
 				}
 
-				if (min_num_int_bytes <= 4 && value_to_find.uint_good() && type_is_type_or_none(find_type_pred, w32::sniff_type_e::u32)) {
-					uint32_t val = *(uint32_t *)non_str_bytes;
-					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_uint<uint32_t>());
+				if (unsigned_value_fits<uint32_t>(value_to_find) && type_is_type_or_none(find_type_pred, w32::sniff_type_e::u32)) {
+					uint32_t val = 0;
+					match = read_value(mem_region_copy, i, val)
+						&& sniff_cmp(find_pred_str, val, value_to_find.as_uint<uint32_t>());
 
 					if (match) {
 						sm->thread_sniffs.at(id).emplace_back(w32::sniff_type_e::u32, region_record.AssociatedPid, location);
 					}
 				}
 
-				if (min_num_int_bytes <= 8 && value_to_find.uint_good() && type_is_type_or_none(find_type_pred, w32::sniff_type_e::u64)) {
-					uint64_t val = *(uint64_t *)non_str_bytes;
-					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_uint<uint64_t>());
+				if (unsigned_value_fits<uint64_t>(value_to_find) && type_is_type_or_none(find_type_pred, w32::sniff_type_e::u64)) {
+					uint64_t val = 0;
+					match = read_value(mem_region_copy, i, val)
+						&& sniff_cmp(find_pred_str, val, value_to_find.as_uint<uint64_t>());
 
 					if (match) {
 						sm->thread_sniffs.at(id).emplace_back(w32::sniff_type_e::u64, region_record.AssociatedPid, location);
 					}
 				}
 
-				if (min_num_int_bytes <= 1 && value_to_find.int_good() && type_is_type(find_type_pred, w32::sniff_type_e::i8)) {
-					int8_t val = *(int8_t *)non_str_bytes;
-					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_int<int8_t>());
+				if (signed_value_fits<int8_t>(value_to_find) && type_is_type(find_type_pred, w32::sniff_type_e::i8)) {
+					int8_t val = 0;
+					match = read_value(mem_region_copy, i, val)
+						&& sniff_cmp(find_pred_str, val, value_to_find.as_int<int8_t>());
 
 					if (match) {
 						sm->thread_sniffs.at(id).emplace_back(w32::sniff_type_e::i8, region_record.AssociatedPid, location);
 					}
 				}
 
-				if (min_num_int_bytes <= 4 && value_to_find.int_good() && type_is_type_or_none(find_type_pred, w32::sniff_type_e::i32)) {
-					int32_t val = *(int32_t *)non_str_bytes;
-					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_int<int32_t>());
+				if (signed_value_fits<int32_t>(value_to_find) && type_is_type_or_none(find_type_pred, w32::sniff_type_e::i32)) {
+					int32_t val = 0;
+					match = read_value(mem_region_copy, i, val)
+						&& sniff_cmp(find_pred_str, val, value_to_find.as_int<int32_t>());
 
 					if (match) {
 						sm->thread_sniffs.at(id).emplace_back(w32::sniff_type_e::i32, region_record.AssociatedPid, location);
 					}
 				}
 
-				if (min_num_int_bytes <= 8 && value_to_find.int_good() && type_is_type_or_none(find_type_pred, w32::sniff_type_e::i64)) {
-					int64_t val = *(int64_t *)non_str_bytes;
-					match = sniff_cmp_i(find_pred_str, val, value_to_find.as_int<int64_t>());
+				if (signed_value_fits<int64_t>(value_to_find) && type_is_type_or_none(find_type_pred, w32::sniff_type_e::i64)) {
+					int64_t val = 0;
+					match = read_value(mem_region_copy, i, val)
+						&& sniff_cmp(find_pred_str, val, value_to_find.as_int<int64_t>());
 
 					if (match) {
 						sm->thread_sniffs.at(id).emplace_back(w32::sniff_type_e::i64, region_record.AssociatedPid, location);
@@ -286,8 +308,9 @@ namespace sniffer {
 				}
 
 				if (value_to_find.float_good() && type_is_type_or_none(find_type_pred, w32::sniff_type_e::f32)) {
-					float_t val = *(float_t *)non_str_bytes;
-					match = sniff_cmp_f(find_pred_str, val, value_to_find.as_float<float_t>());
+					float_t val = 0;
+					match = read_value(mem_region_copy, i, val)
+						&& sniff_cmp(find_pred_str, val, value_to_find.as_float<float_t>());
 
 					if (match) {
 						sm->thread_sniffs.at(id).emplace_back(w32::sniff_type_e::f32, region_record.AssociatedPid, location);
@@ -295,8 +318,9 @@ namespace sniffer {
 				}
 
 				if (value_to_find.float_good() && type_is_type_or_none(find_type_pred, w32::sniff_type_e::f64)) {
-					double_t val = *(double_t *)non_str_bytes;
-					match = sniff_cmp_f(find_pred_str, val, value_to_find.as_float<double_t>());
+					double_t val = 0;
+					match = read_value(mem_region_copy, i, val)
+						&& sniff_cmp(find_pred_str, val, value_to_find.as_float<double_t>());
 
 					if (match) {
 						sm->thread_sniffs.at(id).emplace_back(w32::sniff_type_e::f64, region_record.AssociatedPid, location);
@@ -319,66 +343,75 @@ namespace sniffer {
 				auto & work_unit = sm->work_units.at(i);
 				bool match = false;
 
+				if (filter_type_pred != 0 && ((uint32_t)work_unit.type & filter_type_pred) == 0) {
+					sm->thread_resniffs[id].insert(std::make_tuple(work_unit.type, work_unit.pid, work_unit.mem_location));
+					continue;
+				}
+
+				const auto string_size = filter_value_pred.as_string().size();
+				const auto bytes_to_read = sniff_type_size(work_unit.type, string_size);
+				if (bytes_to_read == 0) continue;
 				mem_region_copy.reset(
 					(w32::DWORD)work_unit.pid,
 					(w32::LPVOID)work_unit.mem_location,
-					work_unit.type == w32::sniff_type_e::str ? sm->sniff_record->value.as_string().size() : 8,
+					bytes_to_read,
 					false,
 					0
 				);
-				if (filter_type_pred != 0) {
-					if (((uint32_t)work_unit.type & filter_type_pred) == 0) {
-						sm->thread_resniffs[id].insert(std::make_tuple(work_unit.type, work_unit.pid, work_unit.mem_location));
-						continue;
-					}
-				}
+				if (!mem_region_copy.is_good()) continue;
 
 				if (work_unit.type == w32::sniff_type_e::str) {
-					for (uint64_t j = 0; j < filter_value_pred.as_string().size(); ++j) {
-						match = sniff_cmp_i(filter_pred_str, filter_value_pred.as_string().at(j), mem_region_copy[j]);
-
-						if (!match) break;
-					}
+					std::string memory_value(string_size, '\0');
+					match = mem_region_copy.read_bytes(0, &memory_value[0], memory_value.size())
+						&& sniff_cmp(filter_pred_str, memory_value, filter_value_pred.as_string());
 				}
 				else if (work_unit.type == w32::sniff_type_e::i8) {
-					int8_t val = *(int8_t *)&mem_region_copy[0];
-
-					match = sniff_cmp_i(filter_pred_str, filter_value_pred.as_int<int8_t>(), val);
+					int8_t val = 0;
+					match = signed_value_fits<int8_t>(filter_value_pred)
+						&& read_value(mem_region_copy, 0, val)
+						&& sniff_cmp(filter_pred_str, val, filter_value_pred.as_int<int8_t>());
 				}
 				else if (work_unit.type == w32::sniff_type_e::i32) {
-					int32_t val = *(int32_t *)&mem_region_copy[0];
-
-					match = sniff_cmp_i(filter_pred_str, filter_value_pred.as_int<int32_t>(), val);
+					int32_t val = 0;
+					match = signed_value_fits<int32_t>(filter_value_pred)
+						&& read_value(mem_region_copy, 0, val)
+						&& sniff_cmp(filter_pred_str, val, filter_value_pred.as_int<int32_t>());
 				}
 				else if (work_unit.type == w32::sniff_type_e::i64) {
-					int64_t val = *(int64_t *)&mem_region_copy[0];
-
-					match = sniff_cmp_i(filter_pred_str, filter_value_pred.as_int<int64_t>(), val);
+					int64_t val = 0;
+					match = signed_value_fits<int64_t>(filter_value_pred)
+						&& read_value(mem_region_copy, 0, val)
+						&& sniff_cmp(filter_pred_str, val, filter_value_pred.as_int<int64_t>());
 				}
 				else if (work_unit.type == w32::sniff_type_e::u8) {
-					uint8_t val = *(uint8_t *)&mem_region_copy[0];
-
-					match = sniff_cmp_i(filter_pred_str, filter_value_pred.as_uint<uint8_t>(), val);
+					uint8_t val = 0;
+					match = unsigned_value_fits<uint8_t>(filter_value_pred)
+						&& read_value(mem_region_copy, 0, val)
+						&& sniff_cmp(filter_pred_str, val, filter_value_pred.as_uint<uint8_t>());
 				}
 				else if (work_unit.type == w32::sniff_type_e::u32) {
-					uint32_t val = *(uint32_t *)&mem_region_copy[0];
-
-					match = sniff_cmp_i(filter_pred_str, filter_value_pred.as_uint<uint32_t>(), val);
+					uint32_t val = 0;
+					match = unsigned_value_fits<uint32_t>(filter_value_pred)
+						&& read_value(mem_region_copy, 0, val)
+						&& sniff_cmp(filter_pred_str, val, filter_value_pred.as_uint<uint32_t>());
 				}
 				else if (work_unit.type == w32::sniff_type_e::u64) {
-					uint64_t val = *(uint64_t *)&mem_region_copy[0];
-
-					match = sniff_cmp_i(filter_pred_str, filter_value_pred.as_uint<uint64_t>(), val);
+					uint64_t val = 0;
+					match = unsigned_value_fits<uint64_t>(filter_value_pred)
+						&& read_value(mem_region_copy, 0, val)
+						&& sniff_cmp(filter_pred_str, val, filter_value_pred.as_uint<uint64_t>());
 				}
 				else if (work_unit.type == w32::sniff_type_e::f32) {
-					float_t val = *(float_t *)&mem_region_copy[0];
-
-					match = sniff_cmp_f(filter_pred_str, filter_value_pred.as_float<float_t>(), val);
+					float_t val = 0;
+					match = filter_value_pred.float_good()
+						&& read_value(mem_region_copy, 0, val)
+						&& sniff_cmp(filter_pred_str, val, filter_value_pred.as_float<float_t>());
 				}
 				else if (work_unit.type == w32::sniff_type_e::f64) {
-					double_t val = *(double_t *)&mem_region_copy[0];
-
-					match = sniff_cmp_f(filter_pred_str, filter_value_pred.as_float<double_t>(), val);
+					double_t val = 0;
+					match = filter_value_pred.float_good()
+						&& read_value(mem_region_copy, 0, val)
+						&& sniff_cmp(filter_pred_str, val, filter_value_pred.as_float<double_t>());
 				}
 
 				if (match) {
@@ -459,10 +492,10 @@ namespace sniffer {
 
 	std::vector<w32::sniff_record_set_t> filter_sniffs(sniffer_context_t & ctx) {
 		std::vector<w32::sniff_record_set_t> result;
-		std::set<std::tuple<w32::sniff_type_e, size_t, uint64_t>> sniffs_to_exclude;
+		std::set<std::tuple<w32::sniff_type_e, size_t, uint64_t>> sniffs_to_keep;
 		for (const auto & resniff : ctx.mem.thread_resniffs) {
-			for (const auto index_to_exclude : resniff) {
-				sniffs_to_exclude.insert(index_to_exclude);
+			for (const auto & matching_sniff : resniff) {
+				sniffs_to_keep.insert(matching_sniff);
 			}
 
 		}
@@ -471,7 +504,7 @@ namespace sniffer {
 		std::set<uint64_t> sniffs_to_remove;
 		for (const auto & type_to_locations : ctx.state.sniffs->get_locations()) {
 			for (const auto & sniff : type_to_locations.second) {
-				if (sniffs_to_exclude.count(sniff) == 1) {
+				if (sniffs_to_keep.count(sniff) == 0) {
 					sniffs_to_remove.insert(i);
 				}
 				i++;
@@ -479,7 +512,7 @@ namespace sniffer {
 		}
 
 		ctx.state.sniffs->remove(sniffs_to_remove);
-		ctx.state.in_process_scratch_pad["num_sniffs_removed"] = std::to_string(sniffs_to_exclude.size());
+		ctx.state.in_process_scratch_pad["num_sniffs_removed"] = std::to_string(sniffs_to_remove.size());
 
 		return result;
 	}
@@ -510,7 +543,7 @@ namespace sniffer {
 						has_offset_output = false;
 					}
 
-					const auto size = std::get<0>(mem_location) == w32::sniff_type_e::str ? ctx.state.sniffs->value.as_string().size() : 8;
+					const auto size = sniff_type_size(std::get<0>(mem_location), ctx.state.sniffs->value.as_string().size());
 					mem_region_copy.reset(
 						(w32::DWORD)std::get<1>(mem_location),
 						(w32::LPVOID)std::get<2>(mem_location),
@@ -520,7 +553,11 @@ namespace sniffer {
 					);
 					ctx.out_stream << "\tSniffRecord (id=" << i - 1 << ", pid=" << std::get<1>(mem_location) << ", location=";
 					ctx.out_stream << "0x" << std::setw(16) << std::setfill('0') << std::hex << std::get<2>(mem_location) << std::dec;
-					ctx.out_stream << ", type=" << w32::get_sniff_type_str_for_type(type_to_location.first) << ", value=" << data_to_string(type_to_location.first, &mem_region_copy[0], size);
+					std::vector<uint8_t> data(size);
+					const auto value = mem_region_copy.is_good() && mem_region_copy.read_bytes(0, data.data(), data.size())
+						? data_to_string(type_to_location.first, data.data(), data.size())
+						: std::string("<unavailable>");
+					ctx.out_stream << ", type=" << w32::get_sniff_type_str_for_type(type_to_location.first) << ", value=" << value;
 					ctx.out_stream << ")" << std::endl;
 
 					if (i - offset == 20) {
@@ -548,7 +585,10 @@ namespace sniffer {
 			if (args_string[i] == '"') in_quote = !in_quote;
 			if (args_string[i] == ' ' && !in_quote) {
 				if (!word.empty()) {
-					if (word[0] == '-') {
+					const auto is_negative_number = word.size() > 1
+						&& word[0] == '-'
+						&& (std::isdigit(static_cast<unsigned char>(word[1])) || word[1] == '.');
+					if (word[0] == '-' && !is_negative_number) {
 						word.erase(word.begin());
 					}
 					result.push_back(word);
@@ -563,7 +603,10 @@ namespace sniffer {
 		}
 
 		if (!word.empty()) {
-			if (word[0] == '-') {
+			const auto is_negative_number = word.size() > 1
+				&& word[0] == '-'
+				&& (std::isdigit(static_cast<unsigned char>(word[1])) || word[1] == '.');
+			if (word[0] == '-' && !is_negative_number) {
 				word.erase(word.begin());
 			}
 			result.push_back(word);
@@ -635,7 +678,7 @@ namespace sniffer {
 			{
 				std::lock_guard<std::mutex> lock_guard(ctx->state.replace_thread_mutex);
 				for (auto & replace_record : ctx->state.repeat_replace) {
-					do_mem_replace(replace_record.pid, replace_record.location, replace_record.type, replace_record.value);
+					do_mem_replace(replace_record.pid, replace_record.location, replace_record.type, replace_record.value, replace_record.max_string_size);
 				}
 			}
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -924,6 +967,7 @@ namespace sniffer {
 								record.pid = std::get<1>(sniff);
 								record.location = std::get<2>(sniff);
 								record.value = value_to_set;
+								record.max_string_size = ctx.state.sniffs->value.as_string().size();
 								ctx.state.repeat_replace.push_back(record);
 							}
 						}
@@ -941,6 +985,7 @@ namespace sniffer {
 								record.pid = std::get<1>(sniff);
 								record.location = std::get<2>(sniff);
 								record.value = value_to_set;
+								record.max_string_size = ctx.state.sniffs->value.as_string().size();
 								ctx.state.repeat_replace.push_back(record);
 							}
 						}

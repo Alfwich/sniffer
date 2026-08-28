@@ -53,8 +53,9 @@ namespace w32 {
 		uint64_t region_size = 0;
 		uint64_t page_size = 0;
 		uint64_t additional_buffer = 0;
-		void buffer_if_needed(uint64_t addr_from_base_to_load);
+		bool buffer_if_needed(uint64_t addr_from_base_to_load);
 		uint64_t translate_index(uint64_t i);
+		uint64_t accessible_size() const;
 		bool has_failed_load = false;
 		bool refs_split_record = false;
 	public:
@@ -75,12 +76,13 @@ namespace w32 {
 			buffer_if_needed(0);
 		}
 
-		uint8_t & operator[](uint64_t i);
+		bool contains(uint64_t offset, size_t length) const;
+		bool read_bytes(uint64_t offset, void * destination, size_t length);
+		bool read_byte(uint64_t offset, uint8_t & value) { return read_bytes(offset, &value, sizeof(value)); }
 
-		uint64_t size() { return region_size; }
+		uint64_t size() const { return region_size; }
 
-		bool is_good() { return !has_failed_load && region_size != 0 && base != 0; }
-		bool index_lies_on_boundary(uint64_t i) { return translate_index(i) + 8 >= bytes.size(); }
+		bool is_good() const { return !has_failed_load && region_size != 0 && base != 0; }
 	};
 
 	enum class sniff_type_e {
@@ -108,6 +110,13 @@ namespace w32 {
 		bool uint_load_failure = false;
 		bool fp_load_failure = false;
 
+		void reset_parse_state() {
+			primed = false;
+			int_load_failure = false;
+			uint_load_failure = false;
+			fp_load_failure = false;
+		}
+
 		void prime() {
 			if (!primed) {
 				switch (ref_type) {
@@ -133,21 +142,28 @@ namespace w32 {
 					break;
 				case sniff_type_e::str:
 					try {
-						uint_value = std::stoull(str_value);
+						if (!str_value.empty() && str_value.front() == '-') throw std::invalid_argument("negative unsigned value");
+						size_t parsed_characters = 0;
+						uint_value = std::stoull(str_value, &parsed_characters);
+						if (parsed_characters != str_value.size()) throw std::invalid_argument("trailing unsigned characters");
 					}
 					catch (...) {
 						uint_load_failure = true;
 					}
 
 					try {
-						int_value = std::stoll(str_value);
+						size_t parsed_characters = 0;
+						int_value = std::stoll(str_value, &parsed_characters);
+						if (parsed_characters != str_value.size()) throw std::invalid_argument("trailing signed characters");
 					}
 					catch (...) {
 						int_load_failure = true;
 					}
 
 					try {
-						fp_value = std::stod(str_value);
+						size_t parsed_characters = 0;
+						fp_value = std::stod(str_value, &parsed_characters);
+						if (parsed_characters != str_value.size()) throw std::invalid_argument("trailing floating-point characters");
 					}
 					catch (...) {
 						fp_load_failure = true;
@@ -287,46 +303,55 @@ namespace w32 {
 		void set_value(const std::string & value) {
 			this->str_value = value;
 			ref_type = sniff_type_e::str;
+			reset_parse_state();
 		}
 
 		void set_value(int8_t value) {
 			int_value = value;
 			ref_type = sniff_type_e::i8;
+			reset_parse_state();
 		}
 
 		void set_value(int32_t value) {
 			int_value = value;
 			ref_type = sniff_type_e::i32;
+			reset_parse_state();
 		}
 
 		void set_value(int64_t value) {
 			int_value = value;
 			ref_type = sniff_type_e::i64;
+			reset_parse_state();
 		}
 
 		void set_value(uint8_t value) {
 			uint_value = value;
 			ref_type = sniff_type_e::u8;
+			reset_parse_state();
 		}
 
 		void set_value(uint32_t value) {
 			uint_value = value;
 			ref_type = sniff_type_e::u32;
+			reset_parse_state();
 		}
 
 		void set_value(uint64_t value) {
 			uint_value = value;
 			ref_type = sniff_type_e::u64;
+			reset_parse_state();
 		}
 
 		void set_value(float_t value) {
 			fp_value = value;
 			ref_type = sniff_type_e::f32;
+			reset_parse_state();
 		}
 
 		void set_value(double_t value) {
 			fp_value = value;
 			ref_type = sniff_type_e::f64;
+			reset_parse_state();
 		}
 
 		const std::string & as_string() {
@@ -378,6 +403,7 @@ namespace w32 {
 			int_load_failure = other.int_load_failure;
 			uint_load_failure = other.uint_load_failure;
 			fp_load_failure = other.fp_load_failure;
+			ref_type = other.ref_type;
 			return *this;
 		}
 	};
@@ -487,10 +513,10 @@ namespace w32 {
 	std::set<uint64_t> get_all_live_pids();
 	std::vector<memory_region_record_t> get_all_memory_regions_for_pid(DWORD pid);
 	std::vector<DWORD> get_all_pids_for_process_name(std::wstring proc_name);
-	void set_bytes_at_location_for_pid(uint64_t pid, uint64_t location, uint8_t * bytes, size_t size);
+	bool set_bytes_at_location_for_pid(uint64_t pid, uint64_t location, const uint8_t * bytes, size_t size);
 	const char * get_sniff_type_str_for_type(sniff_type_e type);
 	uint32_t get_sniff_type_for_str(const std::string & type_str);
 	std::string get_num_system_cores();
 	void clear_open_handles(const std::vector<DWORD> pids);
-	std::string data_to_string(sniff_type_e type, uint8_t * data, size_t size);
+	std::string data_to_string(sniff_type_e type, const uint8_t * data, size_t size);
 }

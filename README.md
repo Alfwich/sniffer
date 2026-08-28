@@ -170,7 +170,7 @@ Release and x86 test presets are also available. The tests exercise numeric and 
 - Windows-only; process discovery and memory access use Win32 APIs.
 - There is no graphical interface.
 - Search results and named contexts are kept in memory for the current session; persistence is not implemented.
-- String replacement writes the replacement bytes in place and does not resize the target allocation.
+- String replacement writes bytes in place and rejects values longer than the original match; shorter replacements leave the remaining original bytes unchanged.
 - Exact floating-point comparisons can be sensitive to representation and rounding.
 - The interactive `threads` command currently clamps positive values to one; the initial worker count still defaults to the system processor count.
 - The legacy one-shot command-line actions are incomplete; interactive mode is the supported workflow.

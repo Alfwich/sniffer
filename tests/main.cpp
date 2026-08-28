@@ -6,6 +6,8 @@
 #include <iostream>
 #include <sstream>
 #include <assert.h>
+#include <atomic>
+#include <cstring>
 
 #include "libsniffer/sniffer.h"
 
@@ -44,19 +46,39 @@ w32::memory_region_record_t get_test_heap_memory_region() {
 	return test_mem_record;
 }
 
-void execute_test_command(sniffer::sniffer_context_t & ctx, std::string cmd) {
+void execute_test_command_with_records(
+	sniffer::sniffer_context_t & ctx,
+	std::string cmd,
+	const std::vector<w32::memory_region_record_t> & records,
+	bool split_records = false) {
 	sniffer::update_interactive_args_with_input(ctx, cmd);
 	sniffer::do_pre_workload(ctx);
-	ctx.state.memory_records.clear();
-	ctx.state.memory_records.push_back(get_test_heap_memory_region());
-	if (chunk_size > 0) {
-		sniffer::split_large_records(ctx.state.memory_records, chunk_size);
-	}
-	else {
-		sniffer::split_large_records(ctx.state.memory_records, 1024 * 1024);
+	ctx.state.memory_records = records;
+	if (split_records) {
+		if (chunk_size > 0) {
+			sniffer::split_large_records(ctx.state.memory_records, chunk_size);
+		}
+		else {
+			sniffer::split_large_records(ctx.state.memory_records, 1024 * 1024);
+		}
 	}
 	sniffer::do_workload(ctx);
 	sniffer::do_post_workload(ctx);
+}
+
+void execute_test_command(sniffer::sniffer_context_t & ctx, std::string cmd) {
+	execute_test_command_with_records(ctx, cmd, { get_test_heap_memory_region() }, true);
+}
+
+w32::memory_region_record_t make_memory_region_record(void * base, size_t size) {
+	auto info = w32::MEMORY_BASIC_INFORMATION();
+	w32::VirtualQuery(base, &info, sizeof(info));
+	auto record = w32::memory_region_record_t(w32::GetCurrentProcessId(), info);
+	record.BaseAddress = base;
+	record.RegionSize = size;
+	record.is_split_record = false;
+	record.is_end_record = true;
+	return record;
 }
 
 std::vector<std::tuple<w32::sniff_type_e, size_t, uint64_t>> get_sniffs(sniffer::sniffer_context_t & ctx) {
@@ -69,6 +91,13 @@ std::vector<std::tuple<w32::sniff_type_e, size_t, uint64_t>> get_sniffs(sniffer:
 	}
 
 	return std::move(result);
+}
+
+bool has_sniff_at(sniffer::sniffer_context_t & ctx, w32::sniff_type_e type, const void * address) {
+	for (const auto & sniff : get_sniffs(ctx)) {
+		if (std::get<0>(sniff) == type && std::get<2>(sniff) == reinterpret_cast<uint64_t>(address)) return true;
+	}
+	return false;
 }
 
 namespace tests {
@@ -510,6 +539,172 @@ namespace tests {
 		}
 
 	}
+
+	void do_memory_safety_regression_tests(sniffer::sniffer_context_t & ctx) {
+		execute_test_command(ctx, "context global");
+
+		{
+			clear_heap();
+			auto target = &heap.ptr[4096];
+			target[-1] = 0xa5;
+			target[0] = 212;
+			for (size_t i = 1; i <= 8; ++i) target[i] = static_cast<uint8_t>(0xb0 + i);
+
+			test_reporter_t reporter("u8 replacement should not overwrite adjacent target bytes");
+			execute_test_command(ctx, "find 212 type u8");
+			assert(has_sniff_at(ctx, w32::sniff_type_e::u8, target));
+			execute_test_command(ctx, "set 7");
+			assert(target[-1] == 0xa5);
+			assert(target[0] == 7);
+			for (size_t i = 1; i <= 8; ++i) assert(target[i] == static_cast<uint8_t>(0xb0 + i));
+		}
+
+		{
+			clear_heap();
+			auto target = reinterpret_cast<char *>(&heap.ptr[8192]);
+			const char original[] = "catGUARD";
+			std::memcpy(target, original, sizeof(original));
+
+			test_reporter_t reporter("string replacement longer than the match should be rejected without overwriting its guard");
+			execute_test_command(ctx, "find cat type str");
+			assert(has_sniff_at(ctx, w32::sniff_type_e::str, target));
+			execute_test_command(ctx, "set elephant");
+			assert(std::memcmp(target, original, sizeof(original)) == 0);
+		}
+
+		w32::SYSTEM_INFO system_info = {};
+		w32::GetSystemInfo(&system_info);
+		const auto page_size = static_cast<size_t>(system_info.dwPageSize);
+		auto guarded_pages = static_cast<uint8_t *>(w32::VirtualAlloc(
+			nullptr,
+			page_size * 2,
+			MEM_RESERVE | MEM_COMMIT,
+			PAGE_READWRITE));
+		assert(guarded_pages != nullptr);
+		std::memset(guarded_pages, 0, page_size * 2);
+		w32::DWORD old_protect = 0;
+		assert(w32::VirtualProtect(guarded_pages + page_size, page_size, PAGE_NOACCESS, &old_protect));
+		const auto first_page_record = make_memory_region_record(guarded_pages, page_size);
+
+		{
+			guarded_pages[page_size - 1] = 127;
+			test_reporter_t reporter("u64 search should reject a truncated value at the end of a readable region");
+			execute_test_command_with_records(ctx, "find 127 type u64", { first_page_record });
+			assert(!has_sniff_at(ctx, w32::sniff_type_e::u64, guarded_pages + page_size - 1));
+		}
+
+		{
+			std::memset(guarded_pages, 0, page_size);
+			const std::string exact_end = "END!";
+			auto target = guarded_pages + page_size - exact_end.size();
+			std::memcpy(target, exact_end.data(), exact_end.size());
+			test_reporter_t reporter("string search should include a match ending exactly at the readable-region boundary");
+			execute_test_command_with_records(ctx, "find END! type str", { first_page_record });
+			assert(has_sniff_at(ctx, w32::sniff_type_e::str, target));
+		}
+
+		{
+			guarded_pages[0] = 42;
+			ctx.state.sniffs->clear();
+			ctx.state.sniffs->value.set_value("42");
+			ctx.state.sniffs->set_location(w32::sniff_type_e::u8, w32::GetCurrentProcessId(), reinterpret_cast<uint64_t>(guarded_pages));
+			ctx.state.sniffs->set_location(w32::sniff_type_e::u8, w32::GetCurrentProcessId(), reinterpret_cast<uint64_t>(guarded_pages + page_size));
+
+			test_reporter_t reporter("filter should discard an unreadable result instead of reusing bytes from the prior result");
+			const auto saved_thread_count = ctx.state.num_threads;
+			ctx.state.num_threads = 1;
+			execute_test_command_with_records(ctx, "filter 42 type u8 pred eq", {});
+			ctx.state.num_threads = saved_thread_count;
+			assert(ctx.state.sniffs->size() == 1);
+			assert(has_sniff_at(ctx, w32::sniff_type_e::u8, guarded_pages));
+		}
+
+		assert(w32::VirtualFree(guarded_pages, 0, MEM_RELEASE));
+
+		{
+			clear_heap();
+			auto low = reinterpret_cast<uint32_t *>(&heap.ptr[12288]);
+			auto high = reinterpret_cast<uint32_t *>(&heap.ptr[12320]);
+			*low = 5;
+			*high = 10;
+			ctx.state.sniffs->clear();
+			ctx.state.sniffs->value.set_value("0");
+			ctx.state.sniffs->set_location(w32::sniff_type_e::u32, w32::GetCurrentProcessId(), reinterpret_cast<uint64_t>(low));
+			ctx.state.sniffs->set_location(w32::sniff_type_e::u32, w32::GetCurrentProcessId(), reinterpret_cast<uint64_t>(high));
+
+			test_reporter_t reporter("filter lt should compare memory on the left side of the predicate");
+			execute_test_command_with_records(ctx, "filter 10 type u32 pred lt", {});
+			assert(ctx.state.sniffs->size() == 1);
+			assert(has_sniff_at(ctx, w32::sniff_type_e::u32, low));
+		}
+
+		{
+			clear_heap();
+			auto target = reinterpret_cast<int32_t *>(&heap.ptr[16384]);
+			*target = -5;
+
+			test_reporter_t reporter("signed find predicates should preserve negative ordering");
+			execute_test_command(ctx, "find 0 type i32 pred lt");
+			assert(has_sniff_at(ctx, w32::sniff_type_e::i32, target));
+			execute_test_command(ctx, "find -5 type i32 pred eq");
+			assert(has_sniff_at(ctx, w32::sniff_type_e::i32, target));
+		}
+
+		{
+			clear_heap();
+			auto different = reinterpret_cast<char *>(&heap.ptr[20480]);
+			auto equal = reinterpret_cast<char *>(&heap.ptr[20512]);
+			std::memcpy(different, "cat", 3);
+			std::memcpy(equal, "car", 3);
+			ctx.state.sniffs->clear();
+			ctx.state.sniffs->value.set_value("cat");
+			ctx.state.sniffs->set_location(w32::sniff_type_e::str, w32::GetCurrentProcessId(), reinterpret_cast<uint64_t>(different));
+			ctx.state.sniffs->set_location(w32::sniff_type_e::str, w32::GetCurrentProcessId(), reinterpret_cast<uint64_t>(equal));
+
+			test_reporter_t reporter("string ne filtering should compare the whole string rather than require every byte to differ");
+			execute_test_command_with_records(ctx, "filter car type str pred ne", {});
+			assert(ctx.state.sniffs->size() == 1);
+			assert(has_sniff_at(ctx, w32::sniff_type_e::str, different));
+		}
+
+		{
+			auto protected_page = static_cast<uint8_t *>(w32::VirtualAlloc(
+				nullptr,
+				page_size,
+				MEM_RESERVE | MEM_COMMIT,
+				PAGE_READWRITE));
+			assert(protected_page != nullptr);
+			std::memset(protected_page, 0, page_size);
+			w32::DWORD previous_protect = 0;
+			assert(w32::VirtualProtect(protected_page, page_size, PAGE_READONLY, &previous_protect));
+
+			test_reporter_t reporter("concurrent writes should restore the original target-page protection");
+			std::atomic<bool> writes_succeeded(true);
+			std::vector<std::thread> writers;
+			for (size_t i = 0; i < 8; ++i) {
+				writers.emplace_back([protected_page, i, &writes_succeeded]() {
+					const uint8_t value = static_cast<uint8_t>(i + 1);
+					for (size_t attempt = 0; attempt < 32; ++attempt) {
+						if (!w32::set_bytes_at_location_for_pid(
+							w32::GetCurrentProcessId(),
+							reinterpret_cast<uint64_t>(protected_page + i),
+							&value,
+							sizeof(value))) {
+							writes_succeeded = false;
+						}
+					}
+				});
+			}
+			for (auto & writer : writers) writer.join();
+			assert(writes_succeeded);
+
+			auto page_info = w32::MEMORY_BASIC_INFORMATION();
+			assert(w32::VirtualQuery(protected_page, &page_info, sizeof(page_info)) == sizeof(page_info));
+			assert((page_info.Protect & 0xff) == PAGE_READONLY);
+			for (size_t i = 0; i < 8; ++i) assert(protected_page[i] == static_cast<uint8_t>(i + 1));
+			assert(w32::VirtualFree(protected_page, 0, MEM_RELEASE));
+		}
+	}
 }
 
 int main(int argc, char * argv[]) {
@@ -537,6 +732,7 @@ int main(int argc, char * argv[]) {
 		tests::do_context_tests(test_ctx);
 		tests::do_pick_remove_undo_tests(test_ctx);
 		tests::do_repeat_replace_tests(test_ctx);
+		tests::do_memory_safety_regression_tests(test_ctx);
 	}
 
 	std::cout << "All tests pass" << std::endl;

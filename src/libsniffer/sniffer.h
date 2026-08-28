@@ -7,6 +7,7 @@
 #include <thread>
 #include <mutex>
 #include <unordered_map>
+#include <atomic>
 
 #include "w32_api.h"
 
@@ -202,6 +203,7 @@ namespace sniffer {
 		size_t pid;
 		uint64_t location;
 		w32::sniff_value_t value;
+		size_t max_string_size = 0;
 	};
 
 	class global_state_t {
@@ -220,7 +222,7 @@ namespace sniffer {
 
 		std::mutex replace_thread_mutex;
 		std::vector<repeat_record_t> repeat_replace;
-		bool replace_thread_is_running = true;
+		std::atomic<bool> replace_thread_is_running{ true };
 		bool profile = false;
 	};
 
